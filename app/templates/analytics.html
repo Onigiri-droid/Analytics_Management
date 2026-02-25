@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Аналитика</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 16px; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #ddd; padding: 8px; font-size: 14px; }
+        th { background: #f5f5f5; text-align: left; }
+        .muted { color: #666; }
+        .bad { background: #ffe5e5; }       /* > 6 недель без продаж */
+        .good { background: #e6ffed; }      /* рост */
+        .warn { background: #fff8db; }      /* сезонность */
+        .pill { display: inline-block; padding: 2px 8px; border-radius: 12px; background: #eee; }
+    </style>
+</head>
+<body>
+    <h1>Аналитика</h1>
+    <div class="muted">
+        Отчёт: <b>{{ report_date or "нет данных" }}</b>,
+        показано: <b>{{ rows|length }}</b>,
+        limit={{ limit }}, offset={{ offset }}
+    </div>
+
+    <p class="muted">
+        Подсветка: красным — &gt; 6 недель без продаж, зелёным — тренд вверх, жёлтым — пик сезона (есть peak_month).
+    </p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Артикул</th>
+                <th>Название</th>
+                <th>Недель без продаж</th>
+                <th>Последняя продажа</th>
+                <th>Пик месяца</th>
+                <th>Тренд</th>
+                <th>Остаток</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for r in rows %}
+            {% set cls = "" %}
+            {% if r.weeks_without_sales > 6 %}
+                {% set cls = cls + " bad" %}
+            {% endif %}
+            {% if r.trend == "up" %}
+                {% set cls = cls + " good" %}
+            {% endif %}
+            {% if r.peak_month %}
+                {% set cls = cls + " warn" %}
+            {% endif %}
+            <tr class="{{ cls|trim }}">
+                <td><a href="/analytics/{{ r.article }}">{{ r.article }}</a></td>
+                <td>{{ r.name }}</td>
+                <td><span class="pill">{{ r.weeks_without_sales }}</span></td>
+                <td>{{ r.last_sale_date or "-" }}</td>
+                <td>{{ r.peak_month or "-" }}</td>
+                <td>{{ r.trend }} ({{ r.trend_pct }}%)</td>
+                <td>{{ r.stock_qty }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>
+
