@@ -1,12 +1,10 @@
-from io import BytesIO
-
-import pandas as pd
 from fastapi import APIRouter, UploadFile, File, Depends, Request, HTTPException
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.templates import templates
+from app.services.weekly_reports import ingest_weekly_report
 
 router = APIRouter()
 
@@ -27,10 +25,7 @@ async def upload_file(
         raise HTTPException(400, detail=f"Ожидается файл {ALLOWED_EXTENSION}")
 
     contents = await file.read()
-    df = pd.read_excel(BytesIO(contents))
 
-    return {
-        "filename": file.filename,
-        "rows": len(df),
-        "columns": list(df.columns),
-    }
+    result = ingest_weekly_report(filename=file.filename, file_bytes=contents, db=db)
+
+    return result
