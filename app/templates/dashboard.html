@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .text-success { color: #16a34a; } /* green-600 */
+        .text-danger { color: #dc2626; }  /* red-600 */
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="max-w-6xl mx-auto px-4 py-6">
+        <header class="mb-6 flex items-center justify-between">
+            <div>
+                <h1 class="text-2xl font-semibold text-gray-900">
+                    {{ title }}
+                </h1>
+                {% if not has_data %}
+                    <p class="text-sm text-gray-500 mt-1">
+                        Данных ещё нет. Загрузите первый отчёт на странице <a href="/upload/" class="text-blue-600 hover:underline">/upload</a>.
+                    </p>
+                {% endif %}
+            </div>
+            <nav class="text-sm text-gray-500 space-x-4">
+                <a href="/upload/" class="hover:text-gray-800">Загрузка отчёта</a>
+                <a href="/analytics/" class="hover:text-gray-800">Аналитика</a>
+            </nav>
+        </header>
+
+        {% if has_data %}
+        <!-- KPI -->
+        <section class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+            <div class="bg-white rounded-lg shadow-sm p-4">
+                <h2 class="text-sm font-medium text-gray-500 mb-2">Продажи за неделю</h2>
+                <p class="text-2xl font-semibold text-gray-900">
+                    {{ "%.0f"|format(kpi_sales.current) }} ₽
+                </p>
+                <p class="text-sm mt-1">
+                    {% if kpi_sales.growth_pct is not none %}
+                        {% set g = kpi_sales.growth_pct %}
+                        <span class="{% if g > 0 %}text-success{% elif g < 0 %}text-danger{% else %}text-gray-500{% endif %}">
+                            {{ "%.1f"|format(g) }}%
+                        </span>
+                        от прошлой недели
+                    {% else %}
+                        <span class="text-gray-500">нет данных для сравнения</span>
+                    {% endif %}
+                </p>
+            </div>
+
+            <div class="bg-white rounded-lg shadow-sm p-4">
+                <h2 class="text-sm font-medium text-gray-500 mb-2">Товаров в наличии</h2>
+                <p class="text-2xl font-semibold text-gray-900">
+                    {{ kpi_stock.in_stock }} <span class="text-base font-normal text-gray-500">из {{ kpi_stock.total_sku }} SKU</span>
+                </p>
+                <p class="text-sm text-gray-500 mt-1">
+                    {{ kpi_stock.critical_count }} позиций с критическим остатком
+                </p>
+            </div>
+
+            <div class="bg-white rounded-lg shadow-sm p-4">
+                <h2 class="text-sm font-medium text-gray-500 mb-2">Критический остаток</h2>
+                <p class="text-2xl font-semibold text-danger">
+                    {{ kpi_stock.critical_count }}
+                </p>
+                <p class="text-sm text-gray-500 mt-1">
+                    stock_qty &le; sales_qty за последнюю неделю
+                </p>
+            </div>
+        </section>
+
+        <!-- Динамика и распределение -->
+        <section class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+            <div class="bg-white rounded-lg shadow-sm p-4">
+                <h2 class="text-sm font-medium text-gray-700 mb-3">Динамика продаж по неделям (шт.)</h2>
+                <table class="min-w-full text-sm">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Отчёт</th>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Продажи, шт.</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                    {% for p in weekly_sales %}
+                        <tr>
+                            <td class="px-3 py-2 text-gray-700">{{ p.report_date }}</td>
+                            <td class="px-3 py-2 text-gray-900">{{ "%.0f"|format(p.sales_qty) }}</td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="bg-white rounded-lg shadow-sm p-4">
+                <h2 class="text-sm font-medium text-gray-700 mb-3">Распределение по категориям (group3)</h2>
+                <table class="min-w-full text-sm">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Категория</th>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Продажи, шт.</th>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">% от общего</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                    {% for c in categories %}
+                        <tr>
+                            <td class="px-3 py-2 text-gray-700">{{ c.category_name }}</td>
+                            <td class="px-3 py-2 text-gray-900">{{ "%.0f"|format(c.total_qty) }}</td>
+                            <td class="px-3 py-2 text-gray-700">{{ "%.1f"|format(c.percentage) }}%</td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ТОПы -->
+        <section class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="bg-white rounded-lg shadow-sm p-4">
+                <h2 class="text-sm font-medium text-gray-700 mb-3">ТОП‑5 продаваемых товаров</h2>
+                <table class="min-w-full text-sm">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Товар</th>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Продано, шт.</th>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Сумма, ₽</th>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Δ к прошлой нед.</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                    {% for t in top_sellers %}
+                        {% set cls = "text-gray-700" %}
+                        {% if t.delta_qty > 0 %}
+                            {% set cls = "text-success" %}
+                        {% elif t.delta_qty < 0 %}
+                            {% set cls = "text-danger" %}
+                        {% endif %}
+                        <tr>
+                            <td class="px-3 py-2 text-gray-700">{{ t.name }}</td>
+                            <td class="px-3 py-2 text-gray-900">{{ "%.0f"|format(t.sales_qty) }}</td>
+                            <td class="px-3 py-2 text-gray-900">{{ "%.0f"|format(t.revenue) }}</td>
+                            <td class="px-3 py-2 {{ cls }}">
+                                {% if t.delta_qty > 0 %}+{% endif %}
+                                {{ "%.0f"|format(t.delta_qty) }}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="bg-white rounded-lg shadow-sm p-4">
+                <h2 class="text-sm font-medium text-gray-700 mb-3">ТОП‑5 товаров на дозакупку</h2>
+                <table class="min-w-full text-sm">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Товар</th>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Продано, шт.</th>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Остаток</th>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Статус</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                    {% for t in top_restock %}
+                        <tr>
+                            <td class="px-3 py-2 text-gray-700">{{ t.name }}</td>
+                            <td class="px-3 py-2 text-gray-900">{{ "%.0f"|format(t.sales_qty) }}</td>
+                            <td class="px-3 py-2 text-gray-900">{{ "%.0f"|format(t.stock_qty) }}</td>
+                            <td class="px-3 py-2 {% if t.status == 'Критично' %}text-danger{% else %}text-success{% endif %}">
+                                {{ t.status }}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        {% endif %}
+    </div>
+</body>
+</html>
+
