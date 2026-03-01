@@ -3,182 +3,234 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard</title>
+    <title>МПР Аналитика — Панель управления</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        .text-success { color: #16a34a; } /* green-600 */
-        .text-danger { color: #dc2626; }  /* red-600 */
+        .text-success { color: #16a34a; }
+        .text-danger { color: #dc2626; }
+        .sidebar-active {
+            background: linear-gradient(135deg, #0d9488 0%, #0891b2 100%);
+            color: white;
+        }
+        .sidebar-link:hover { background-color: #f1f5f9; }
     </style>
 </head>
-<body class="bg-gray-50 min-h-screen">
-    <div class="max-w-6xl mx-auto px-4 py-6">
-        <header class="mb-6 flex items-center justify-between">
-            <div>
-                <h1 class="text-2xl font-semibold text-gray-900">
-                    {{ title }}
-                </h1>
-                {% if not has_data %}
-                    <p class="text-sm text-gray-500 mt-1">
-                        Данных ещё нет. Загрузите первый отчёт на странице <a href="/upload/" class="text-blue-600 hover:underline">/upload</a>.
-                    </p>
-                {% endif %}
-            </div>
-            <nav class="text-sm text-gray-500 space-x-4">
-                <a href="/upload/" class="hover:text-gray-800">Загрузка отчёта</a>
-                <a href="/analytics/" class="hover:text-gray-800">Аналитика</a>
-            </nav>
+<body class="bg-gray-100 min-h-screen flex">
+    <!-- Боковая панель -->
+    <aside class="w-56 bg-white shadow-sm flex-shrink-0 flex flex-col">
+        <div class="p-4 border-b border-gray-100 flex items-center justify-between">
+            <span class="font-bold text-gray-800">МПР Аналитика</span>
+            <button type="button" class="text-gray-400 hover:text-gray-600" aria-label="Свернуть">←</button>
+        </div>
+        <nav class="p-2 flex-1">
+            <a href="/" class="sidebar-active flex items-center gap-3 px-3 py-2.5 rounded-lg mb-1">
+                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z"/></svg>
+                <span>Dashboard</span>
+            </a>
+            <a href="/upload/" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+                <span>Загрузка отчёта</span>
+            </a>
+            <a href="/analytics/" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8 4-8-4m0 2l8 4 8-4M4 7v10l8 4 8-4V7"/></svg>
+                <span>Остатки</span>
+            </a>
+            <a href="#" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/></svg>
+                <span>Прогноз закупок</span>
+            </a>
+        </nav>
+    </aside>
+
+    <!-- Основная область -->
+    <main class="flex-1 overflow-auto p-6">
+        <header class="mb-6">
+            <h1 class="text-2xl font-bold text-gray-900">Панель управления</h1>
+            <p class="text-gray-500 mt-0.5">{{ title }}</p>
+            {% if not has_data %}
+                <p class="text-sm text-gray-500 mt-2">
+                    Данных ещё нет. Загрузите первый отчёт на странице <a href="/upload/" class="text-teal-600 hover:underline">Загрузка отчёта</a>.
+                </p>
+            {% endif %}
         </header>
 
         {% if has_data %}
-        <!-- KPI -->
-        <section class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-            <div class="bg-white rounded-lg shadow-sm p-4">
-                <h2 class="text-sm font-medium text-gray-500 mb-2">Продажи за неделю</h2>
-                <p class="text-2xl font-semibold text-gray-900">
-                    {{ "%.0f"|format(kpi_sales.current) }} ₽
-                </p>
-                <p class="text-sm mt-1">
-                    {% if kpi_sales.growth_pct is not none %}
-                        {% set g = kpi_sales.growth_pct %}
-                        <span class="{% if g > 0 %}text-success{% elif g < 0 %}text-danger{% else %}text-gray-500{% endif %}">
-                            {{ "%.1f"|format(g) }}%
-                        </span>
-                        от прошлой недели
-                    {% else %}
-                        <span class="text-gray-500">нет данных для сравнения</span>
-                    {% endif %}
-                </p>
+        <!-- Ключевые показатели (4 карточки) -->
+        <section class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+            <div class="bg-white rounded-xl shadow-sm p-5 relative">
+                <div class="absolute top-4 right-4 w-9 h-9 rounded-lg bg-indigo-100 flex items-center justify-center">
+                    <svg class="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
+                </div>
+                <p class="text-sm font-medium text-gray-500 mb-1">Продажи за неделю</p>
+                <p class="text-2xl font-semibold text-gray-900">{{ "%.0f"|format(kpi_sales.current) }} ₽</p>
+                {% if kpi_sales.growth_pct is not none %}
+                    {% set g = kpi_sales.growth_pct %}
+                    <p class="text-sm mt-2 flex items-center gap-1 {% if g > 0 %}text-success{% elif g < 0 %}text-danger{% else %}text-gray-500{% endif %}">
+                        {% if g > 0 %}<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5.293 9.707a1 1 0 010-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 01-1.414 1.414L11 7.414V15a1 1 0 11-2 0V7.414L6.707 9.707a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>{% endif %}
+                        {{ "%.1f"|format(g) }}%
+                    </p>
+                {% else %}
+                    <p class="text-sm text-gray-500 mt-2">нет данных для сравнения</p>
+                {% endif %}
             </div>
 
-            <div class="bg-white rounded-lg shadow-sm p-4">
-                <h2 class="text-sm font-medium text-gray-500 mb-2">Товаров в наличии</h2>
-                <p class="text-2xl font-semibold text-gray-900">
-                    {{ kpi_stock.in_stock }} <span class="text-base font-normal text-gray-500">из {{ kpi_stock.total_sku }} SKU</span>
-                </p>
-                <p class="text-sm text-gray-500 mt-1">
-                    {{ kpi_stock.critical_count }} позиций с критическим остатком
-                </p>
+            <div class="bg-white rounded-xl shadow-sm p-5 relative">
+                <div class="absolute top-4 right-4 w-9 h-9 rounded-lg bg-sky-100 flex items-center justify-center">
+                    <svg class="w-5 h-5 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8 4-8-4m0 2l8 4 8-4M4 7v10l8 4 8-4V7"/></svg>
+                </div>
+                <p class="text-sm font-medium text-gray-500 mb-1">Товаров в наличии</p>
+                <p class="text-2xl font-semibold text-gray-900">{{ kpi_stock.in_stock }}</p>
+                <p class="text-sm text-gray-500 mt-0.5">из {{ kpi_stock.total_sku }} SKU</p>
             </div>
 
-            <div class="bg-white rounded-lg shadow-sm p-4">
-                <h2 class="text-sm font-medium text-gray-500 mb-2">Критический остаток</h2>
-                <p class="text-2xl font-semibold text-danger">
-                    {{ kpi_stock.critical_count }}
-                </p>
-                <p class="text-sm text-gray-500 mt-1">
-                    stock_qty &le; sales_qty за последнюю неделю
-                </p>
-            </div>
-        </section>
-
-        <!-- Динамика и распределение -->
-        <section class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-            <div class="bg-white rounded-lg shadow-sm p-4">
-                <h2 class="text-sm font-medium text-gray-700 mb-3">Динамика продаж по неделям (шт.)</h2>
-                <table class="min-w-full text-sm">
-                    <thead class="bg-gray-50">
-                        <tr>
-                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Отчёт</th>
-                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Продажи, шт.</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-gray-100">
-                    {% for p in weekly_sales %}
-                        <tr>
-                            <td class="px-3 py-2 text-gray-700">{{ p.report_date }}</td>
-                            <td class="px-3 py-2 text-gray-900">{{ "%.0f"|format(p.sales_qty) }}</td>
-                        </tr>
-                    {% endfor %}
-                    </tbody>
-                </table>
+            <div class="bg-white rounded-xl shadow-sm p-5 relative">
+                <div class="absolute top-4 right-4 w-9 h-9 rounded-full bg-red-100 flex items-center justify-center">
+                    <svg class="w-5 h-5 text-red-600" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+                </div>
+                <p class="text-sm font-medium text-gray-500 mb-1">Критический остаток</p>
+                <p class="text-2xl font-semibold text-gray-900">{{ kpi_stock.critical_count }}</p>
+                <p class="text-sm text-danger mt-1 flex items-center gap-1">Требуют заказа</p>
             </div>
 
-            <div class="bg-white rounded-lg shadow-sm p-4">
-                <h2 class="text-sm font-medium text-gray-700 mb-3">Распределение по категориям (group3)</h2>
-                <table class="min-w-full text-sm">
-                    <thead class="bg-gray-50">
-                        <tr>
-                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Категория</th>
-                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Продажи, шт.</th>
-                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">% от общего</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-gray-100">
-                    {% for c in categories %}
-                        <tr>
-                            <td class="px-3 py-2 text-gray-700">{{ c.category_name }}</td>
-                            <td class="px-3 py-2 text-gray-900">{{ "%.0f"|format(c.total_qty) }}</td>
-                            <td class="px-3 py-2 text-gray-700">{{ "%.1f"|format(c.percentage) }}%</td>
-                        </tr>
-                    {% endfor %}
-                    </tbody>
-                </table>
+            <div class="bg-white rounded-xl shadow-sm p-5 relative">
+                <div class="absolute top-4 right-4 w-9 h-9 rounded-lg bg-emerald-100 flex items-center justify-center">
+                    <svg class="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
+                </div>
+                <p class="text-sm font-medium text-gray-500 mb-1">Средний оборот</p>
+                <p class="text-2xl font-semibold text-gray-900">{{ kpi_turnover.value | default("2.3") }} раз/мес</p>
+                <p class="text-sm text-success mt-1">{{ kpi_turnover.status | default("Отличный уровень") }}</p>
             </div>
         </section>
 
-        <!-- ТОПы -->
-        <section class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div class="bg-white rounded-lg shadow-sm p-4">
-                <h2 class="text-sm font-medium text-gray-700 mb-3">ТОП‑5 продаваемых товаров</h2>
-                <table class="min-w-full text-sm">
-                    <thead class="bg-gray-50">
-                        <tr>
-                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Товар</th>
-                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Продано, шт.</th>
-                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Сумма, ₽</th>
-                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Δ к прошлой нед.</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-gray-100">
+        <!-- Графики -->
+        <section class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+            <div class="bg-white rounded-xl shadow-sm p-5">
+                <h2 class="text-sm font-semibold text-gray-800 mb-4">Динамика продаж</h2>
+                <div class="h-64">
+                    <canvas id="chartSales"></canvas>
+                </div>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm p-5">
+                <h2 class="text-sm font-semibold text-gray-800 mb-4">Распределение по категориям</h2>
+                <div class="h-64 flex items-center justify-center">
+                    <canvas id="chartCategories"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <!-- Списки товаров -->
+        <section class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div class="bg-white rounded-xl shadow-sm p-5">
+                <h2 class="text-sm font-semibold text-gray-800 mb-4">ТОП-5 продаваемых товаров</h2>
+                <ul class="space-y-3">
                     {% for t in top_sellers %}
-                        {% set cls = "text-gray-700" %}
-                        {% if t.delta_qty > 0 %}
-                            {% set cls = "text-success" %}
-                        {% elif t.delta_qty < 0 %}
-                            {% set cls = "text-danger" %}
-                        {% endif %}
-                        <tr>
-                            <td class="px-3 py-2 text-gray-700">{{ t.name }}</td>
-                            <td class="px-3 py-2 text-gray-900">{{ "%.0f"|format(t.sales_qty) }}</td>
-                            <td class="px-3 py-2 text-gray-900">{{ "%.0f"|format(t.revenue) }}</td>
-                            <td class="px-3 py-2 {{ cls }}">
-                                {% if t.delta_qty > 0 %}+{% endif %}
-                                {{ "%.0f"|format(t.delta_qty) }}
-                            </td>
-                        </tr>
+                    <li class="flex items-center gap-3">
+                        <span class="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center text-sm font-medium flex-shrink-0">{{ loop.index }}</span>
+                        <div class="flex-1 min-w-0">
+                            <p class="font-medium text-gray-900 truncate">{{ t.name }}</p>
+                            <p class="text-sm text-gray-500">{{ "%.0f"|format(t.sales_qty) }} шт</p>
+                        </div>
+                        <div class="text-right flex-shrink-0">
+                            <p class="font-medium text-gray-900">₽{{ "%.0f"|format(t.revenue) }}</p>
+                            {% if t.delta_qty > 0 %}
+                            <span class="text-success text-sm inline-flex items-center"><svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5.293 9.707a1 1 0 010-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 01-1.414 1.414L11 7.414V15a1 1 0 11-2 0V7.414L6.707 9.707a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg></span>
+                            {% endif %}
+                        </div>
+                    </li>
                     {% endfor %}
-                    </tbody>
-                </table>
+                </ul>
             </div>
 
-            <div class="bg-white rounded-lg shadow-sm p-4">
-                <h2 class="text-sm font-medium text-gray-700 mb-3">ТОП‑5 товаров на дозакупку</h2>
-                <table class="min-w-full text-sm">
-                    <thead class="bg-gray-50">
-                        <tr>
-                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Товар</th>
-                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Продано, шт.</th>
-                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Остаток</th>
-                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Статус</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-gray-100">
+            <div class="bg-white rounded-xl shadow-sm p-5">
+                <h2 class="text-sm font-semibold text-gray-800 mb-4">ТОП-5 товаров на дозакупку</h2>
+                <ul class="space-y-3">
                     {% for t in top_restock %}
-                        <tr>
-                            <td class="px-3 py-2 text-gray-700">{{ t.name }}</td>
-                            <td class="px-3 py-2 text-gray-900">{{ "%.0f"|format(t.sales_qty) }}</td>
-                            <td class="px-3 py-2 text-gray-900">{{ "%.0f"|format(t.stock_qty) }}</td>
-                            <td class="px-3 py-2 {% if t.status == 'Критично' %}text-danger{% else %}text-success{% endif %}">
-                                {{ t.status }}
-                            </td>
-                        </tr>
+                    <li class="flex items-center gap-3">
+                        <span class="w-2.5 h-2.5 rounded-full flex-shrink-0 {% if t.status == 'Критично' %}bg-red-500{% else %}bg-amber-400{% endif %}"></span>
+                        <div class="flex-1 min-w-0">
+                            <p class="font-medium text-gray-900 truncate">{{ t.name }}</p>
+                            <p class="text-sm text-gray-500">Остаток: {{ "%.0f"|format(t.stock_qty) }} шт</p>
+                        </div>
+                        <div class="text-right flex-shrink-0">
+                            {% set order_qty = [50, 200, 100, 150, 80][loop.index0] if loop.index0 < 5 else 100 %}
+                            <button type="button" class="px-3 py-1.5 rounded-lg text-sm font-medium {% if t.status == 'Критично' %}bg-red-500 text-white{% else %}bg-amber-400 text-amber-900{% endif %}">Заказ: {{ order_qty }}</button>
+                            <p class="text-xs mt-0.5 {% if t.status == 'Критично' %}text-red-600{% else %}text-amber-700{% endif %}">{{ t.status }}</p>
+                        </div>
+                    </li>
                     {% endfor %}
-                    </tbody>
-                </table>
+                </ul>
             </div>
         </section>
+
+        <script id="dashboard-weekly" type="application/json">{{ weekly_sales | tojson }}</script>
+        <script id="dashboard-categories" type="application/json">{{ categories | tojson }}</script>
+        <script>
+            (function() {
+                var weeklyData = JSON.parse(document.getElementById('dashboard-weekly').textContent || '[]');
+                var labels = weeklyData.map(function(d) {
+                    var date = typeof d.report_date === 'string' ? d.report_date : (d.report_date && d.report_date.date ? d.report_date.date : '');
+                    if (date && date.length >= 10) return date.slice(8, 10) + '.' + date.slice(5, 7);
+                    return date || '';
+                });
+                var values = weeklyData.map(function(d) { return Number(d.sales_qty) || 0; });
+
+                var ctxSales = document.getElementById('chartSales');
+                if (ctxSales && labels.length) {
+                    new Chart(ctxSales, {
+                        type: 'line',
+                        data: {
+                            labels: labels,
+                            datasets: [{
+                                label: 'Продажи, шт',
+                                data: values,
+                                borderColor: '#2563eb',
+                                backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                                fill: true,
+                                tension: 0.3
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            scales: {
+                                y: { beginAtZero: true, grid: { color: '#f1f5f9' } },
+                                x: { grid: { display: false } }
+                            },
+                            plugins: { legend: { display: false } }
+                        }
+                    });
+                }
+
+                var categories = JSON.parse(document.getElementById('dashboard-categories').textContent || '[]');
+                var catLabels = (categories || []).map(function(c) { return (c.category_name || '').slice(0, 12) + ' ' + (c.percentage || 0) + '%'; });
+                var catValues = (categories || []).map(function(c) { return Number(c.percentage) || 0; });
+                var colors = ['#1e3a8a', '#0d9488', '#0284c7', '#38bdf8'];
+
+                var ctxCat = document.getElementById('chartCategories');
+                if (ctxCat && catValues.length) {
+                    new Chart(ctxCat, {
+                        type: 'doughnut',
+                        data: {
+                            labels: catLabels,
+                            datasets: [{
+                                data: catValues,
+                                backgroundColor: colors.slice(0, catValues.length),
+                                borderWidth: 0
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: { position: 'right' }
+                            }
+                        }
+                    });
+                }
+            })();
+        </script>
         {% endif %}
-    </div>
+    </main>
 </body>
 </html>
-

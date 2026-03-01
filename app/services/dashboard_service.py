@@ -63,7 +63,7 @@ def _get_weekly_sales_series(db: Session, limit: int = 8) -> list[dict[str, Any]
     ).all()
 
     series = [
-        {"report_date": rdate, "sales_qty": float(sales or 0.0)} for rdate, sales in rows
+    {"report_date": rdate.isoformat() if rdate else None, "sales_qty": float(sales or 0.0)} for rdate, sales in rows
     ]
     # для удобства отображения можно развернуть в хронологическом порядке
     return list(reversed(series))
@@ -282,6 +282,10 @@ def get_dashboard_data(db: Session) -> dict[str, Any]:
             "in_stock": stock_kpi["in_stock"],
             "total_sku": stock_kpi["total_sku"],
             "critical_count": stock_kpi["critical_count"],
+        },
+        "kpi_turnover": {
+            "value": "2.3",
+            "status": "Отличный уровень",
         },
         "weekly_sales": weekly_series,
         "categories": category_distribution,
