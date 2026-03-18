@@ -1,3 +1,4 @@
+# app/routers/analytics.py
 from datetime import date
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -27,10 +28,27 @@ def analytics_page(
     data = build_analytics_table(db, limit=limit, offset=offset)
     return templates.TemplateResponse(
         "analytics.html",
-        {"request": request, "report_date": data["report_date"], "rows": data["rows"], "limit": limit, "offset": offset},
+        {
+            "request":          request,
+            "active_page":      "analytics",
+            # данные отчёта
+            "report_date":      data["report_date"],
+            "prev_report_date": data["prev_report_date"],
+            # kpi-карточки
+            "kpi":              data["kpi"],
+            # фильтры
+            "groups1":          data["groups1"],
+            "groups2":          data["groups2"],
+            "groups3":          data["groups3"],
+            # таблица
+            "rows":             data["rows"],
+            "limit":            limit,
+            "offset":           offset,
+        },
     )
 
 
+# Детальный API по артикулу (не трогаем)
 @router.get("/{article}")
 def analytics_article(
     article: str,
@@ -40,8 +58,7 @@ def analytics_article(
 ):
     return {
         "weeks_without_sales": get_weeks_without_sales(db, article=article),
-        "seasonality": get_seasonality(db, article=article),
-        "trend": get_trend(db, article=article, weeks=weeks),
-        "turnover": get_turnover(db, article=article, report_date=report_date),
+        "seasonality":         get_seasonality(db, article=article),
+        "trend":               get_trend(db, article=article, weeks=weeks),
+        "turnover":            get_turnover(db, article=article, report_date=report_date),
     }
-

@@ -1,0 +1,249 @@
+{% extends "base.html" %}
+{% block title %}Список заказа — МПР Аналитика{% endblock %}
+
+{% block content %}
+
+{#
+  Передаём priceMap в JS через скрытый <script type="application/json">.
+  Это стандартный паттерн: Jinja рендерит JSON в отдельном теге,
+  JS читает его через getElementById — никаких {{ }} внутри <script type="text/javascript">.
+#}
+{% if rows %}
+<script id="price-data" type="application/json">
+{{ rows | map(attribute='article') | list | tojson }}
+</script>
+<script id="price-values" type="application/json">
+[{% for r in rows %}{{ r.store_price or 0 }}{% if not loop.last %},{% endif %}{% endfor %}]
+</script>
+<script id="article-list" type="application/json">
+{{ rows | map(attribute='article') | list | tojson }}
+</script>
+{% endif %}
+
+<div class="mb-5 flex items-start justify-between gap-4 flex-wrap">
+    <div>
+        <h1 class="text-xl font-bold text-slate-900">Список заказа</h1>
+        <p class="text-sm text-slate-500 mt-1">Позиции, добавленные из раздела «Остатки»</p>
+    </div>
+    {% if rows %}
+    <button onclick="clearAll()"
+            class="text-sm font-semibold text-red-500 hover:text-red-700 transition-colors">
+        Очистить список
+    </button>
+    {% endif %}
+</div>
+
+{% if rows %}
+
+<div class="bg-white border border-slate-200 rounded-xl overflow-hidden mb-5">
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="border-b border-slate-100 text-xs text-slate-400 uppercase tracking-wide">
+                    <th class="px-4 py-3 text-left">Артикул</th>
+                    <th class="px-4 py-3 text-left">Наименование</th>
+                    <th class="px-4 py-3 text-right">Кол-во</th>
+                    <th class="px-4 py-3 text-right">Цена</th>
+                    <th class="px-4 py-3 text-right">Сумма</th>
+                    <th class="px-4 py-3 w-10"></th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for r in rows %}
+            {#
+              Цена хранится в data-price на <tr>.
+              JS читает её через tr.dataset.price — без Jinja в скриптах.
+            #}
+            <tr class="border-b border-slate-50 hover:bg-slate-50 transition-colors"
+                data-article="{{ r.article }}"
+                data-price="{{ r.store_price or 0 }}">
+                <td class="px-4 py-3 font-mono text-xs text-slate-500">{{ r.article }}</td>
+                <td class="px-4 py-3 font-medium text-slate-800 max-w-xs truncate"
+                    title="{{ r.name }}">{{ r.name or "—" }}</td>
+                <td class="px-4 py-3 text-right">
+                    <input type="number" min="1" step="1" value="{{ r.qty | int }}"
+                           onchange="updateQty(this)"
+                           class="w-20 text-right text-sm border border-slate-200 rounded-lg
+                                  px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-400">
+                </td>
+                <td class="px-4 py-3 text-right text-slate-600">
+                    {% if r.store_price %}₽{{ r.store_price | int }}{% else %}—{% endif %}
+                </td>
+                <td class="px-4 py-3 text-right font-semibold text-slate-800 total-cell">
+                    {% if r.total %}₽{{ r.total | int }}{% else %}—{% endif %}
+                </td>
+                <td class="px-4 py-3 text-center">
+                    <button onclick="removeItem(this)"
+                            class="w-7 h-7 rounded-lg bg-red-50 hover:bg-red-500 text-red-400
+                                   hover:text-white transition-colors flex items-center justify-center"
+                            title="Удалить">
+                        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24"
+                             stroke="currentColor" stroke-width="2.5">
+                            <path stroke-linecap="round" stroke-linejoin="round"
+                                  d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="px-4 py-3 border-t border-slate-100 flex justify-end items-center gap-4">
+        <span class="text-sm text-slate-500">Итого:</span>
+        <span class="text-lg font-bold text-slate-900" id="grandTotal">
+            ₽{{ grand_total | int }}
+        </span>
+    </div>
+</div>
+
+<div class="flex gap-3 flex-wrap">
+    <button onclick="exportCSV()"
+            class="bg-slate-800 hover:bg-slate-900 text-white text-sm font-semibold
+                   px-5 py-2 rounded-lg transition-colors">
+        Экспорт CSV
+    </button>
+    <a href="/analytics/"
+       class="bg-blue-50 hover:bg-blue-100 text-blue-600 text-sm font-semibold
+              px-5 py-2 rounded-lg transition-colors">
+        ← Вернуться к остаткам
+    </a>
+</div>
+
+{% else %}
+
+<div class="bg-white border border-slate-200 rounded-2xl p-12 text-center max-w-md mx-auto">
+    <div class="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
+        <svg class="w-6 h-6 text-slate-400" fill="none" viewBox="0 0 24 24"
+             stroke="currentColor" stroke-width="1.5">
+            <path stroke-linecap="round" stroke-linejoin="round"
+                  d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2 5h14
+                     M17 18a1 1 0 100 2 1 1 0 000-2zM9 18a1 1 0 100 2 1 1 0 000-2z"/>
+        </svg>
+    </div>
+    <p class="font-semibold text-slate-700 mb-1">Список заказа пуст</p>
+    <p class="text-sm text-slate-400 mb-4">Добавьте товары из раздела «Остатки»</p>
+    <a href="/analytics/"
+       class="inline-block bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold
+              px-5 py-2 rounded-lg transition-colors">
+        Перейти к остаткам
+    </a>
+</div>
+
+{% endif %}
+{% endblock %}
+
+
+{% block extra_scripts %}
+<script>
+    /*
+     * Читаем priceMap из <script type="application/json"> —
+     * VS Code не парсит его как JS, поэтому ошибок нет.
+     * Jinja рендерит JSON в отдельном теге ещё до того,
+     * как этот скрипт выполняется.
+     */
+    var priceMap = {};
+    var articleEl = document.getElementById('article-list');
+    var valuesEl  = document.getElementById('price-values');
+    if (articleEl && valuesEl) {
+        var articles = JSON.parse(articleEl.textContent);
+        var values   = JSON.parse(valuesEl.textContent);
+        articles.forEach(function(art, i) {
+            priceMap[art] = values[i] || 0;
+        });
+    }
+
+    /* Обновить количество — article из data-article родительского tr */
+    function updateQty(input) {
+        var qty     = Math.max(1, parseInt(input.value) || 1);
+        input.value = qty;
+        var tr      = input.closest('tr');
+        var article = tr.dataset.article;
+        var price   = parseFloat(tr.dataset.price) || 0;
+
+        fetch('/orders/remove', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ article: article }),
+        }).then(function() {
+            return fetch('/orders/add', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ article: article, qty: qty, store_price: price || null }),
+            });
+        }).then(function() {
+            var totalCell = tr.querySelector('.total-cell');
+            if (totalCell) {
+                totalCell.textContent = price > 0 ? '₽' + Math.round(qty * price) : '—';
+            }
+            recalcTotal();
+        });
+    }
+
+    /* Пересчёт итога по всем строкам */
+    function recalcTotal() {
+        var sum = 0;
+        document.querySelectorAll('tbody tr').forEach(function(tr) {
+            var input = tr.querySelector('input[type=number]');
+            if (!input) return;
+            var qty   = parseInt(input.value) || 0;
+            var price = parseFloat(tr.dataset.price) || 0;
+            sum += qty * price;
+        });
+        var gt = document.getElementById('grandTotal');
+        if (gt) gt.textContent = '₽' + Math.round(sum);
+    }
+
+    /* Удалить строку */
+    function removeItem(btn) {
+        var tr      = btn.closest('tr');
+        var article = tr.dataset.article;
+        fetch('/orders/remove', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ article: article }),
+        }).then(function() {
+            tr.remove();
+            recalcTotal();
+            if (!document.querySelector('tbody tr')) { location.reload(); }
+        });
+    }
+
+    /* Очистить всё */
+    function clearAll() {
+        if (!confirm('Очистить весь список заказа?')) return;
+        fetch('/orders/clear', { method: 'POST' })
+            .then(function() { location.reload(); });
+    }
+
+    /* Экспорт CSV */
+    function exportCSV() {
+        var csvRows = [['Артикул', 'Наименование', 'Кол-во', 'Цена', 'Сумма']];
+        document.querySelectorAll('tbody tr').forEach(function(tr) {
+            var cells = tr.querySelectorAll('td');
+            if (cells.length < 5) return;
+            var input = tr.querySelector('input[type=number]');
+            csvRows.push([
+                cells[0].textContent.trim(),
+                cells[1].textContent.trim(),
+                input ? input.value : '',
+                cells[3].textContent.trim(),
+                cells[4].textContent.trim(),
+            ]);
+        });
+        var csv  = csvRows.map(function(r) {
+            return r.map(function(c) {
+                return '"' + String(c).replace(/"/g, '""') + '"';
+            }).join(',');
+        }).join('\n');
+        var blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+        var url  = URL.createObjectURL(blob);
+        var a    = document.createElement('a');
+        a.href = url;
+        a.download = 'order.csv';
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+</script>
+{% endblock %}

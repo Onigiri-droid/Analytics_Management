@@ -1,69 +1,371 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Аналитика</title>
-    <style>
-        body { font-family: Arial, sans-serif; padding: 16px; }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { border: 1px solid #ddd; padding: 8px; font-size: 14px; }
-        th { background: #f5f5f5; text-align: left; }
-        .muted { color: #666; }
-        .bad { background: #ffe5e5; }       /* > 6 недель без продаж */
-        .good { background: #e6ffed; }      /* рост */
-        .warn { background: #fff8db; }      /* сезонность */
-        .pill { display: inline-block; padding: 2px 8px; border-radius: 12px; background: #eee; }
-    </style>
-</head>
-<body>
-    <h1>Аналитика</h1>
-    <div class="muted">
-        Отчёт: <b>{{ report_date or "нет данных" }}</b>,
-        показано: <b>{{ rows|length }}</b>,
-        limit={{ limit }}, offset={{ offset }}
-    </div>
+{% extends "base.html" %}
+{% block title %}Остатки — МПР Аналитика{% endblock %}
 
-    <p class="muted">
-        Подсветка: красным — &gt; 6 недель без продаж, зелёным — тренд вверх, жёлтым — пик сезона (есть peak_month).
+{% block content %}
+
+{# ── Заголовок ──────────────────────────────────────────────────────────── #}
+<div class="mb-5">
+    <h1 class="text-xl font-bold text-slate-900">Анализ остатков</h1>
+    {% if report_date %}
+    <p class="text-sm text-slate-500 mt-1">
+        Актуально на
+        <span class="text-blue-500 font-semibold">{{ report_date }}</span>
+        {% if prev_report_date %}
+        · Сравнение с <span class="text-slate-400">{{ prev_report_date }}</span>
+        {% endif %}
     </p>
+    {% else %}
+    <p class="text-sm text-slate-500 mt-2">
+        Нет данных. <a href="/upload/" class="text-blue-500 hover:underline">Загрузить отчёт</a>.
+    </p>
+    {% endif %}
+</div>
 
-    <table>
-        <thead>
+{% if report_date %}
+
+{# ── KPI-карточки ────────────────────────────────────────────────────────── #}
+<div class="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-5">
+    <div class="bg-white border border-slate-200 rounded-xl px-4 py-3">
+        <p class="text-xs text-slate-400 font-medium mb-1">Всего позиций</p>
+        <p class="text-2xl font-bold text-slate-800">{{ kpi.total_sku }}</p>
+        <p class="text-xs text-slate-400 mt-0.5">SKU в базе</p>
+    </div>
+    <div class="bg-white border border-slate-200 rounded-xl px-4 py-3">
+        <p class="text-xs text-slate-400 font-medium mb-1">В наличии</p>
+        <p class="text-2xl font-bold text-green-600">{{ kpi.in_stock }}</p>
+        <p class="text-xs text-slate-400 mt-0.5">норма запаса</p>
+    </div>
+    <div class="bg-white border border-slate-200 rounded-xl px-4 py-3">
+        <p class="text-xs text-slate-400 font-medium mb-1">Низкий/Критический</p>
+        <p class="text-2xl font-bold text-amber-500">{{ kpi.critical_count }}</p>
+        <p class="text-xs text-slate-400 mt-0.5">требуют заказа</p>
+    </div>
+    <div class="bg-white border border-slate-200 rounded-xl px-4 py-3">
+        <p class="text-xs text-slate-400 font-medium mb-1">Сезонные товары</p>
+        <p class="text-2xl font-bold text-violet-500">{{ kpi.seasonal_count }}</p>
+        <p class="text-xs text-slate-400 mt-0.5">по данным продаж</p>
+    </div>
+</div>
+
+{# ── Фильтры ─────────────────────────────────────────────────────────────── #}
+<div class="bg-white border border-slate-200 rounded-xl px-4 py-3 mb-4
+            flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
+    <div class="relative flex-1 min-w-0">
+        <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
+             fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round"
+                  d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z"/>
+        </svg>
+        <input id="searchInput" type="text" placeholder="Поиск по коду или названию..."
+               class="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg
+                      focus:outline-none focus:ring-2 focus:ring-blue-400 bg-slate-50">
+    </div>
+    <select id="filterG1"
+            class="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-slate-50
+                   focus:outline-none focus:ring-2 focus:ring-blue-400 sm:w-44">
+        <option value="">Все группы 1</option>
+        {% for g in groups1 %}<option value="{{ g }}">{{ g }}</option>{% endfor %}
+    </select>
+    <select id="filterG2"
+            class="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-slate-50
+                   focus:outline-none focus:ring-2 focus:ring-blue-400 sm:w-44">
+        <option value="">Все группы 2</option>
+        {% for g in groups2 %}<option value="{{ g }}">{{ g }}</option>{% endfor %}
+    </select>
+    <select id="filterG3"
+            class="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-slate-50
+                   focus:outline-none focus:ring-2 focus:ring-blue-400 sm:w-44">
+        <option value="">Все группы 3</option>
+        {% for g in groups3 %}<option value="{{ g }}">{{ g }}</option>{% endfor %}
+    </select>
+</div>
+
+{# ── Панель массового заказа ──────────────────────────────────────────────── #}
+<div id="bulkBar"
+     class="hidden bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 mb-4
+            flex items-center gap-3 flex-wrap">
+    <span class="text-sm font-semibold text-blue-700">
+        Выбрано: <span id="selectedCount">0</span> позиций
+    </span>
+    <button onclick="addSelectedToOrder()"
+            class="ml-auto bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold
+                   px-4 py-1.5 rounded-lg transition-colors">
+        + Добавить в заказ
+    </button>
+    <button onclick="clearSelection()"
+            class="text-sm text-slate-500 hover:text-slate-700 transition-colors">
+        Отменить
+    </button>
+</div>
+
+{# ── Таблица ──────────────────────────────────────────────────────────────── #}
+<div class="bg-white border border-slate-200 rounded-xl overflow-hidden">
+    <div class="px-4 py-3 border-b border-slate-100">
+        <span class="text-sm font-semibold text-slate-700">
+            Список товаров (<span id="visibleCount">{{ rows|length }}</span>)
+        </span>
+    </div>
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm" id="analyticsTable">
+            <thead>
+                <tr class="border-b border-slate-100 text-xs text-slate-400 uppercase tracking-wide">
+                    <th class="px-3 py-3 text-left w-8">
+                        <input type="checkbox" id="checkAll" onchange="toggleAll(this)"
+                               class="rounded border-slate-300 text-blue-500 focus:ring-blue-400">
+                    </th>
+                    <th class="px-3 py-3 text-left cursor-pointer hover:text-slate-600 select-none"
+                        onclick="sortTable('article')">Артикул <span>↕</span></th>
+                    <th class="px-3 py-3 text-left cursor-pointer hover:text-slate-600 select-none"
+                        onclick="sortTable('name')">Наименование <span>↕</span></th>
+                    <th class="px-3 py-3 text-left">Категории</th>
+                    <th class="px-3 py-3 text-right cursor-pointer hover:text-slate-600 select-none"
+                        onclick="sortTable('stock')">Остаток <span>↕</span></th>
+                    <th class="px-3 py-3 text-right cursor-pointer hover:text-slate-600 select-none"
+                        onclick="sortTable('sales')">Продажи/нед <span>↕</span></th>
+                    <th class="px-3 py-3 text-right">Цена</th>
+                    <th class="px-3 py-3 text-right cursor-pointer hover:text-slate-600 select-none"
+                        onclick="sortTable('margin')">Наценка <span>↕</span></th>
+                    <th class="px-3 py-3 w-10"></th>
+                </tr>
+            </thead>
+            <tbody id="tableBody">
+            {% for r in rows %}
+            {% if r.stock_status == "critical" %}{% set row_bg = "bg-red-50" %}
+            {% elif r.stock_status == "low" %}{% set row_bg = "bg-amber-50" %}
+            {% elif r.stock_status == "empty" %}{% set row_bg = "bg-slate-50" %}
+            {% else %}{% set row_bg = "" %}{% endif %}
+
+            {#
+              Все строковые данные для JS кладём в data-* атрибуты.
+              Числа передаём напрямую — они безопасны.
+              Это позволяет избежать конфликта кавычек Jinja/JS.
+            #}
+            <tr class="table-row border-b border-slate-50 hover:bg-slate-50 transition-colors {{ row_bg }}"
+                data-article="{{ r.article }}"
+                data-name="{{ r.name }}"
+                data-g1="{{ r.group1 }}"
+                data-g2="{{ r.group2 }}"
+                data-g3="{{ r.group3 }}"
+                data-stock="{{ r.stock_qty }}"
+                data-sales="{{ r.sales_qty }}"
+                data-margin="{{ r.actual_margin_pct }}"
+                data-price="{{ r.store_price or 0 }}">
+
+                <td class="px-3 py-3">
+                    {# data-* на чекбоксе — безопасно, кавычек JS здесь нет #}
+                    <input type="checkbox" class="row-check rounded border-slate-300 text-blue-500"
+                           onchange="updateBulkBar()"
+                           data-article="{{ r.article }}"
+                           data-name="{{ r.name }}"
+                           data-price="{{ r.store_price or 0 }}">
+                </td>
+
+                <td class="px-3 py-3 font-mono text-xs text-slate-500 whitespace-nowrap">
+                    {{ r.article }}
+                </td>
+
+                <td class="px-3 py-3 max-w-xs">
+                    <p class="font-medium text-slate-800 truncate" title="{{ r.name }}">{{ r.name }}</p>
+                    <div class="flex flex-wrap gap-1 mt-1">
+                        {% if r.is_seasonal %}
+                        <span class="text-xs font-semibold px-1.5 py-0.5 rounded bg-violet-100 text-violet-600">✦ Сезонный</span>
+                        {% endif %}
+                        {% if r.trend == "up" %}
+                        <span class="text-xs font-semibold px-1.5 py-0.5 rounded bg-green-100 text-green-600">↑ Рост</span>
+                        {% elif r.trend == "down" %}
+                        <span class="text-xs font-semibold px-1.5 py-0.5 rounded bg-red-100 text-red-500">↓ Спад</span>
+                        {% endif %}
+                    </div>
+                </td>
+
+                <td class="px-3 py-3 text-xs text-slate-400 whitespace-nowrap">
+                    {% if r.group1 %}<p class="text-slate-600 font-medium">{{ r.group1 }}</p>{% endif %}
+                    {% if r.group2 %}<p>→ {{ r.group2 }}</p>{% endif %}
+                    {% if r.group3 %}<p>{{ r.group3 }}</p>{% endif %}
+                </td>
+
+                <td class="px-3 py-3 text-right whitespace-nowrap">
+                    <span class="font-semibold
+                        {% if r.stock_status == 'critical' %}text-red-500
+                        {% elif r.stock_status == 'low' %}text-amber-500
+                        {% elif r.stock_status == 'empty' %}text-slate-300
+                        {% else %}text-slate-700{% endif %}">
+                        {{ r.stock_qty | int }} шт
+                    </span>
+                    {% if r.critical_threshold %}
+                    <p class="text-xs text-slate-400">крит: {{ r.critical_threshold }}</p>
+                    {% endif %}
+                </td>
+
+                <td class="px-3 py-3 text-right whitespace-nowrap">
+                    <span class="text-slate-700 font-medium">{{ r.sales_qty | int }}</span>
+                    {% if r.sales_per_day %}
+                    <p class="text-xs text-slate-400">{{ r.sales_per_day }}/день</p>
+                    {% endif %}
+                </td>
+
+                <td class="px-3 py-3 text-right whitespace-nowrap text-slate-700">
+                    {% if r.store_price %}₽{{ r.store_price | int }}{% else %}—{% endif %}
+                </td>
+
+                <td class="px-3 py-3 text-right whitespace-nowrap">
+                    {% if r.actual_margin_pct %}
+                    <span class="font-semibold
+                        {% if r.actual_margin_pct >= 50 %}text-green-600
+                        {% elif r.actual_margin_pct >= 20 %}text-amber-500
+                        {% else %}text-red-500{% endif %}">
+                        {{ r.actual_margin_pct | int }}%
+                    </span>
+                    {% else %}—{% endif %}
+                </td>
+
+                {#
+                  Кнопка «+» — никаких аргументов в onclick.
+                  JS сам читает data-* из ближайшего <tr> через closest().
+                #}
+                <td class="px-3 py-3 text-center">
+                    <button onclick="addRowToOrder(this)"
+                            class="w-7 h-7 rounded-lg bg-blue-50 hover:bg-blue-500 text-blue-500
+                                   hover:text-white transition-colors flex items-center justify-center"
+                            title="Добавить в заказ">
+                        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24"
+                             stroke="currentColor" stroke-width="2.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
+                        </svg>
+                    </button>
+                </td>
+            </tr>
+            {% else %}
             <tr>
-                <th>Артикул</th>
-                <th>Название</th>
-                <th>Недель без продаж</th>
-                <th>Последняя продажа</th>
-                <th>Пик месяца</th>
-                <th>Тренд</th>
-                <th>Остаток</th>
+                <td colspan="9" class="px-4 py-10 text-center text-sm text-slate-400">
+                    Нет данных для отображения
+                </td>
             </tr>
-        </thead>
-        <tbody>
-        {% for r in rows %}
-            {% set cls = "" %}
-            {% if r.weeks_without_sales > 6 %}
-                {% set cls = cls + " bad" %}
-            {% endif %}
-            {% if r.trend == "up" %}
-                {% set cls = cls + " good" %}
-            {% endif %}
-            {% if r.peak_month %}
-                {% set cls = cls + " warn" %}
-            {% endif %}
-            <tr class="{{ cls|trim }}">
-                <td><a href="/analytics/{{ r.article }}">{{ r.article }}</a></td>
-                <td>{{ r.name }}</td>
-                <td><span class="pill">{{ r.weeks_without_sales }}</span></td>
-                <td>{{ r.last_sale_date or "-" }}</td>
-                <td>{{ r.peak_month or "-" }}</td>
-                <td>{{ r.trend }} ({{ r.trend_pct }}%)</td>
-                <td>{{ r.stock_qty }}</td>
-            </tr>
-        {% endfor %}
-        </tbody>
-    </table>
-</body>
-</html>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
 
+{% endif %}
+{% endblock %}
+
+
+{% block extra_scripts %}
+<script>
+// ── Фильтрация ────────────────────────────────────────────────────────────
+// Переименовано в tableRows — иначе конфликт с Jinja-переменной rows
+const tableRows   = document.querySelectorAll('.table-row');
+const visibleCount = document.getElementById('visibleCount');
+
+function applyFilters() {
+    const search = (document.getElementById('searchInput').value || '').toLowerCase();
+    const g1     = document.getElementById('filterG1').value;
+    const g2     = document.getElementById('filterG2').value;
+    const g3     = document.getElementById('filterG3').value;
+
+    let visible = 0;
+    tableRows.forEach(function(row) {
+        const article = (row.dataset.article || '').toLowerCase();
+        const name    = (row.dataset.name    || '').toLowerCase();
+        const ok = (!search || article.includes(search) || name.includes(search))
+                && (!g1 || row.dataset.g1 === g1)
+                && (!g2 || row.dataset.g2 === g2)
+                && (!g3 || row.dataset.g3 === g3);
+        row.style.display = ok ? '' : 'none';
+        if (ok) visible++;
+    });
+    if (visibleCount) visibleCount.textContent = visible;
+}
+
+document.getElementById('searchInput').addEventListener('input',  applyFilters);
+document.getElementById('filterG1').addEventListener('change', applyFilters);
+document.getElementById('filterG2').addEventListener('change', applyFilters);
+document.getElementById('filterG3').addEventListener('change', applyFilters);
+
+
+// ── Сортировка ────────────────────────────────────────────────────────────
+var sortField = null, sortAsc = true;
+
+function sortTable(field) {
+    sortAsc = (sortField === field) ? !sortAsc : true;
+    sortField = field;
+
+    const tbody   = document.getElementById('tableBody');
+    const rowsArr = Array.from(tbody.querySelectorAll('.table-row'));
+    const keyMap  = { article: 'article', name: 'name', stock: 'stock', sales: 'sales', margin: 'margin' };
+    const attr    = keyMap[field] || field;
+
+    rowsArr.sort(function(a, b) {
+        var va = a.dataset[attr] || '', vb = b.dataset[attr] || '';
+        var na = parseFloat(va), nb = parseFloat(vb);
+        if (!isNaN(na) && !isNaN(nb)) return sortAsc ? na - nb : nb - na;
+        return sortAsc ? va.localeCompare(vb, 'ru') : vb.localeCompare(va, 'ru');
+    });
+    rowsArr.forEach(function(r) { tbody.appendChild(r); });
+}
+
+
+// ── Чекбоксы ─────────────────────────────────────────────────────────────
+function toggleAll(master) {
+    document.querySelectorAll('.row-check').forEach(function(cb) {
+        if (cb.closest('tr').style.display !== 'none') cb.checked = master.checked;
+    });
+    updateBulkBar();
+}
+
+function updateBulkBar() {
+    var checked = document.querySelectorAll('.row-check:checked').length;
+    var bar = document.getElementById('bulkBar');
+    document.getElementById('selectedCount').textContent = checked;
+    bar.classList.toggle('hidden', checked === 0);
+    bar.classList.toggle('flex',   checked > 0);
+}
+
+function clearSelection() {
+    document.querySelectorAll('.row-check').forEach(function(cb) { cb.checked = false; });
+    var ca = document.getElementById('checkAll');
+    if (ca) ca.checked = false;
+    updateBulkBar();
+}
+
+
+// ── Добавление в заказ ────────────────────────────────────────────────────
+// Читаем данные из data-* ближайшего <tr> — никаких аргументов-строк в onclick
+function addRowToOrder(btn) {
+    var tr      = btn.closest('tr');
+    var article = tr.dataset.article || '';
+    var name    = tr.dataset.name    || '';
+    var price   = parseFloat(tr.dataset.price) || null;
+    postOrder(article, name, 1, price).then(function(ok) {
+        if (ok) showToast((name || article) + ' добавлен в заказ', 'success');
+    });
+}
+
+function addSelectedToOrder() {
+    var checked = document.querySelectorAll('.row-check:checked');
+    var promises = [];
+    checked.forEach(function(cb) {
+        promises.push(postOrder(
+            cb.dataset.article || '',
+            cb.dataset.name    || '',
+            1,
+            parseFloat(cb.dataset.price) || null
+        ));
+    });
+    Promise.all(promises).then(function(results) {
+        var count = results.filter(Boolean).length;
+        clearSelection();
+        if (count) showToast('Добавлено ' + count + ' позиций в заказ', 'success');
+    });
+}
+
+function postOrder(article, name, qty, price) {
+    return fetch('/orders/add', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ article: article, name: name, qty: qty, store_price: price }),
+    }).then(function(r) { return r.ok; }).catch(function() { return false; });
+}
+</script>
+{% endblock %}

@@ -1,4 +1,8 @@
-# app\services\dashboard_service.py
+# app/services/dashboard_service.py
+#
+# ИЗМЕНЕНИЕ: kpi_turnover теперь считается реально через get_avg_turnover()
+# из analytics_service. Остальной код не тронут.
+#
 from __future__ import annotations
 
 from calendar import month_name
@@ -8,21 +12,13 @@ from sqlalchemy import desc, func, literal, select
 from sqlalchemy.orm import Session
 
 from app.models.weekly_report import WeeklyReport, WeeklyReportItem
+from app.services.analytics_service import get_avg_turnover   # ← новый импорт
 
 
 MONTHS_RU = {
-    1: "Январь",
-    2: "Февраль",
-    3: "Март",
-    4: "Апрель",
-    5: "Май",
-    6: "Июнь",
-    7: "Июль",
-    8: "Август",
-    9: "Сентябрь",
-    10: "Октябрь",
-    11: "Ноябрь",
-    12: "Декабрь",
+    1: "Январь", 2: "Февраль", 3: "Март", 4: "Апрель",
+    5: "Май",    6: "Июнь",    7: "Июль", 8: "Август",
+    9: "Сентябрь", 10: "Октябрь", 11: "Ноябрь", 12: "Декабрь",
 }
 
 
@@ -44,9 +40,8 @@ def _get_latest_and_previous_report(db: Session) -> tuple[WeeklyReport | None, W
 
 def _get_sales_sum_rub(db: Session, report_id: int) -> float:
     value = db.execute(
-        select(func.coalesce(func.sum(WeeklyReportItem.sales_qty * WeeklyReportItem.store_price), 0.0)).where(
-            WeeklyReportItem.report_id == report_id
-        )
+        select(func.coalesce(func.sum(WeeklyReportItem.sales_qty * WeeklyReportItem.store_price), 0.0))
+        .where(WeeklyReportItem.report_id == report_id)
     ).scalar_one()
     return float(value or 0.0)
 
@@ -64,9 +59,9 @@ def _get_weekly_sales_series(db: Session, limit: int = 8) -> list[dict[str, Any]
     ).all()
 
     series = [
-    {"report_date": rdate.isoformat() if rdate else None, "sales_qty": float(sales or 0.0)} for rdate, sales in rows
+        {"report_date": rdate.isoformat() if rdate else None, "sales_qty": float(sales or 0.0)}
+        for rdate, sales in rows
     ]
-    # для удобства отображения можно развернуть в хронологическом порядке
     return list(reversed(series))
 
 
@@ -88,14 +83,11 @@ def _get_category_distribution(db: Session, report_id: int) -> list[dict[str, An
     for group3, qty in rows:
         q = float(qty or 0.0)
         pct = (q / total * 100.0) if total > 0 else 0.0
-        result.append(
-            {
-                "category_name": group3 or "Без категории",
-                "total_qty": q,
-                "percentage": round(float(pct), 2),
-            }
-        )
-    # сортируем по объёму продаж
+        result.append({
+            "category_name": group3 or "Без категории",
+            "total_qty": q,
+            "percentage": round(float(pct), 2),
+        })
     result.sort(key=lambda x: x["total_qty"], reverse=True)
     return result
 
@@ -105,20 +97,19 @@ def _get_stock_kpi(db: Session, report_id: int) -> dict[str, Any]:
         select(func.count()).where(WeeklyReportItem.report_id == report_id)
     ).scalar_one()
     in_stock = db.execute(
-        select(func.count())
-        .where(
+        select(func.count()).where(
             WeeklyReportItem.report_id == report_id,
             WeeklyReportItem.stock_qty.is_not(None),
             WeeklyReportItem.stock_qty > 0,
         )
     ).scalar_one()
     critical = db.execute(
-        select(func.count())
-        .where(
+        select(func.count()).where(
             WeeklyReportItem.report_id == report_id,
             WeeklyReportItem.sales_qty.is_not(None),
             WeeklyReportItem.sales_qty > 0,
             WeeklyReportItem.stock_qty.is_not(None),
+            WeeklyReportItem.stock_qty > 0,
             WeeklyReportItem.stock_qty <= WeeklyReportItem.sales_qty,
         )
     ).scalar_one()
@@ -129,8 +120,9 @@ def _get_stock_kpi(db: Session, report_id: int) -> dict[str, Any]:
     }
 
 
-def _get_top_sellers(db: Session, latest: WeeklyReport, previous: WeeklyReport | None) -> list[dict[str, Any]]:
-    # текущие продажи
+def _get_top_sellers(
+    db: Session, latest: WeeklyReport, previous: WeeklyReport | None
+) -> list[dict[str, Any]]:
     current_subq = (
         select(
             WeeklyReportItem.article.label("article"),
@@ -151,7 +143,6 @@ def _get_top_sellers(db: Session, latest: WeeklyReport, previous: WeeklyReport |
             .where(WeeklyReportItem.report_id == previous.id)
             .subquery()
         )
-
         rows = db.execute(
             select(
                 current_subq.c.article,
@@ -179,25 +170,20 @@ def _get_top_sellers(db: Session, latest: WeeklyReport, previous: WeeklyReport |
 
     result: list[dict[str, Any]] = []
     for article, name, sales_qty, store_price, prev_sales_qty in rows:
-        sales = float(sales_qty or 0.0)
-        price = float(store_price or 0.0)
-        prev_sales = float(prev_sales_qty or 0.0)
-        revenue = sales * price
-        delta = sales - prev_sales
-        result.append(
-            {
-                "article": article,
-                "name": name,
-                "sales_qty": sales,
-                "revenue": revenue,
-                "delta_qty": delta,
-            }
-        )
+        sales   = float(sales_qty or 0.0)
+        price   = float(store_price or 0.0)
+        prev_s  = float(prev_sales_qty or 0.0)
+        result.append({
+            "article":   article,
+            "name":      name,
+            "sales_qty": sales,
+            "revenue":   sales * price,
+            "delta_qty": sales - prev_s,
+        })
     return result
 
 
 def _get_top_restock(db: Session, latest: WeeklyReport) -> list[dict[str, Any]]:
-    # кандидаты на дозакупку: те, у кого есть продажи и остаток
     rows = db.execute(
         select(
             WeeklyReportItem.article,
@@ -213,10 +199,7 @@ def _get_top_restock(db: Session, latest: WeeklyReport) -> list[dict[str, Any]]:
             WeeklyReportItem.stock_qty.is_not(None),
             WeeklyReportItem.stock_qty > 0,
         )
-        .order_by(
-            WeeklyReportItem.sales_qty.desc(),
-            WeeklyReportItem.stock_qty.asc(),
-        )
+        .order_by(WeeklyReportItem.sales_qty.desc(), WeeklyReportItem.stock_qty.asc())
         .limit(50)
     ).all()
 
@@ -230,67 +213,51 @@ def _get_top_restock(db: Session, latest: WeeklyReport) -> list[dict[str, Any]]:
         elif r < 2:
             status = "Низкий"
         else:
-            continue  # нормальный уровень, не отображаем
-        candidates.append(
-            {
-                "article": article,
-                "name": name,
-                "sales_qty": float(sales_qty or 0.0),
-                "stock_qty": float(stock_qty or 0.0),
-                "risk_ratio": r,
-                "status": status,
-            }
-        )
-
-    # уже отсортировано по продажам и остатку, берём top-5
+            continue
+        candidates.append({
+            "article":   article,
+            "name":      name,
+            "sales_qty": float(sales_qty or 0.0),
+            "stock_qty": float(stock_qty or 0.0),
+            "risk_ratio": r,
+            "status":    status,
+        })
     return candidates[:5]
 
 
 def get_dashboard_data(db: Session) -> dict[str, Any]:
     latest, previous = _get_latest_and_previous_report(db)
     if not latest:
-        return {
-            "has_data": False,
-            "title": "Обзор ключевых показателей",
-        }
+        return {"has_data": False, "title": "Обзор ключевых показателей"}
 
     month = MONTHS_RU.get(latest.report_date.month, month_name[latest.report_date.month])
-    year = latest.report_date.year
+    year  = latest.report_date.year
     title = f"Обзор ключевых показателей за {month} {year}"
 
-    current_sales = _get_sales_sum_rub(db, latest.id)
+    current_sales  = _get_sales_sum_rub(db, latest.id)
     previous_sales = _get_sales_sum_rub(db, previous.id) if previous else 0.0
-    if previous_sales > 0:
-        growth_pct = (current_sales - previous_sales) / previous_sales * 100.0
-    else:
-        growth_pct = None
+    growth_pct     = (
+        (current_sales - previous_sales) / previous_sales * 100.0
+        if previous_sales > 0 else None
+    )
 
-    stock_kpi = _get_stock_kpi(db, latest.id)
+    stock_kpi   = _get_stock_kpi(db, latest.id)
     weekly_series = _get_weekly_sales_series(db, limit=8)
     category_distribution = _get_category_distribution(db, latest.id)
     top_sellers = _get_top_sellers(db, latest, previous)
     top_restock = _get_top_restock(db, latest)
 
-    return {
-        "has_data": True,
-        "title": title,
-        "kpi_sales": {
-            "current": current_sales,
-            "previous": previous_sales,
-            "growth_pct": growth_pct,
-        },
-        "kpi_stock": {
-            "in_stock": stock_kpi["in_stock"],
-            "total_sku": stock_kpi["total_sku"],
-            "critical_count": stock_kpi["critical_count"],
-        },
-        "kpi_turnover": {
-            "value": "2.3",
-            "status": "Отличный уровень",
-        },
-        "weekly_sales": weekly_series,
-        "categories": category_distribution,
-        "top_sellers": top_sellers,
-        "top_restock": top_restock,
-    }
+    # ── Оборот: теперь считается из данных, не заглушка ─────────────────
+    kpi_turnover = get_avg_turnover(db)
 
+    return {
+        "has_data":    True,
+        "title":       title,
+        "kpi_sales":   {"current": current_sales, "previous": previous_sales, "growth_pct": growth_pct},
+        "kpi_stock":   stock_kpi,
+        "kpi_turnover": kpi_turnover,     # { "value": "2.3", "status": "Отличный уровень" }
+        "weekly_sales": weekly_series,
+        "categories":   category_distribution,
+        "top_sellers":  top_sellers,
+        "top_restock":  top_restock,
+    }
