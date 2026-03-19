@@ -1,0 +1,287 @@
+{% extends "base.html" %}
+{% block title %}Аналитика товара {{ detail.article }} — МПР Аналитика{% endblock %}
+
+{% block content %}
+<div class="mb-5 flex items-start justify-between gap-4 flex-wrap">
+    <div>
+        <h1 class="text-xl font-bold text-slate-900">Аналитика товара</h1>
+        <p class="text-sm text-slate-500 mt-1">
+            Артикул:
+            <span class="text-blue-500 font-semibold">{{ detail.article }}</span>
+            {% if detail.name %} · <span class="text-slate-700">{{ detail.name }}</span>{% endif %}
+        </p>
+        {% if detail.report_date %}
+        <p class="text-sm text-slate-500 mt-1">
+            Актуально на <span class="text-blue-500 font-semibold">{{ detail.report_date }}</span>
+            {% if detail.prev_report_date %} · сравнение с <span class="text-slate-400">{{ detail.prev_report_date }}</span>{% endif %}
+        </p>
+        {% endif %}
+    </div>
+
+    <div class="flex items-center gap-3">
+        <a href="/analytics/" class="text-sm text-blue-500 hover:underline">
+            ← К списку
+        </a>
+    </div>
+</div>
+
+{% if detail.found %}
+    <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3 mb-5">
+        <div class="bg-white border border-slate-200 rounded-xl px-4 py-3">
+            <p class="text-xs text-slate-400 font-medium mb-1">Остаток</p>
+            <p class="text-2xl font-bold text-slate-800">{{ detail.stock_qty | int }} шт</p>
+            <p class="text-xs text-slate-500 mt-0.5">Статус: {{ detail.stock_status }}</p>
+        </div>
+        <div class="bg-white border border-slate-200 rounded-xl px-4 py-3">
+            <p class="text-xs text-slate-400 font-medium mb-1">Продажи/нед</p>
+            <p class="text-2xl font-bold text-slate-800">{{ detail.sales_qty | int }} шт</p>
+            <p class="text-xs text-slate-500 mt-0.5">{{ detail.sales_per_day }}/день</p>
+        </div>
+        <div class="bg-white border border-slate-200 rounded-xl px-4 py-3">
+            <p class="text-xs text-slate-400 font-medium mb-1">Недели без продаж</p>
+            <p class="text-2xl font-bold text-slate-800">{{ detail.weeks_without_sales }} нед</p>
+            <p class="text-xs text-slate-500 mt-0.5">
+                Последняя продажа: {{ detail.last_sale_date or '—' }}
+            </p>
+        </div>
+        <div class="bg-white border border-slate-200 rounded-xl px-4 py-3">
+            <p class="text-xs text-slate-400 font-medium mb-1">Оборот</p>
+            <p class="text-2xl font-bold text-slate-800">
+                {{ detail.turnover_latest.turnover | round(6) }}
+            </p>
+            <p class="text-xs text-slate-500 mt-0.5">
+                (продажи/остаток)
+            </p>
+        </div>
+        <div class="bg-white border border-slate-200 rounded-xl px-4 py-3">
+            <p class="text-xs text-slate-400 font-medium mb-1">Изменение продаж</p>
+            <p class="text-2xl font-bold text-slate-800">
+                {% if detail.sales_change_pct >= 0 %}
+                    +{{ detail.sales_change_pct | int }}%
+                {% else %}
+                    {{ detail.sales_change_pct | int }}%
+                {% endif %}
+            </p>
+            <p class="text-xs text-slate-500 mt-0.5">
+                {% if detail.prev_report_date %}
+                    {{ detail.prev_sales_qty | int }} → {{ detail.sales_qty | int }} шт
+                {% else %}
+                    Нет данных для сравнения
+                {% endif %}
+            </p>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-4">
+        <div class="bg-white border border-slate-200 rounded-2xl p-4">
+            <div class="flex items-start justify-between gap-3 mb-2">
+                <div>
+                    <h2 class="text-sm font-semibold text-slate-700">Тренд продаж</h2>
+                    <p class="text-xs text-slate-500 mt-0.5">
+                        Изменение: {{ detail.trend.pct_change }}% · {{ detail.trend.trend }}
+                    </p>
+                </div>
+                {% if detail.trend.trend == 'up' %}
+                    <span class="text-xs font-semibold px-2 py-1 rounded bg-green-50 text-green-700">Рост</span>
+                {% elif detail.trend.trend == 'down' %}
+                    <span class="text-xs font-semibold px-2 py-1 rounded bg-red-50 text-red-700">Спад</span>
+                {% else %}
+                    <span class="text-xs font-semibold px-2 py-1 rounded bg-slate-50 text-slate-700">Без изменений</span>
+                {% endif %}
+            </div>
+            <div class="relative h-72">
+                <canvas id="chartTrend"></canvas>
+            </div>
+        </div>
+
+        <div class="bg-white border border-slate-200 rounded-2xl p-4">
+            <h2 class="text-sm font-semibold text-slate-700 mb-2">Сезонность</h2>
+            <div class="relative h-72">
+                <canvas id="chartSeasonality"></canvas>
+            </div>
+            {% if detail.seasonality.peak_month %}
+                <p class="text-xs text-slate-500 mt-2">
+                    Пик: {{ detail.seasonality.peak_month }} (коэф: {{ detail.seasonality.seasonality_coef }})
+                </p>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="bg-white border border-slate-200 rounded-2xl p-4 mb-4">
+        <h2 class="text-sm font-semibold text-slate-700 mb-2">Оборот: сравнение</h2>
+        <div class="relative h-64">
+            <canvas id="chartTurnover"></canvas>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <div class="bg-white border border-slate-200 rounded-2xl p-4 xl:col-span-1">
+            <h2 class="text-sm font-semibold text-slate-700 mb-3">Категории</h2>
+            <div class="space-y-2 text-sm">
+                <p><span class="text-slate-400">Группа 1:</span> {{ detail.group1 or '—' }}</p>
+                <p><span class="text-slate-400">Группа 2:</span> {{ detail.group2 or '—' }}</p>
+                <p><span class="text-slate-400">Группа 3:</span> {{ detail.group3 or '—' }}</p>
+            </div>
+        </div>
+        <div class="bg-white border border-slate-200 rounded-2xl p-4 xl:col-span-2">
+            <h2 class="text-sm font-semibold text-slate-700 mb-3">Финансовые метрики</h2>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                <div class="bg-slate-50 rounded-xl p-3 border border-slate-200">
+                    <p class="text-xs text-slate-500">Цена</p>
+                    <p class="text-lg font-semibold text-slate-800">
+                        {% if detail.store_price is not none %}₽{{ detail.store_price | int }}{% else %}—{% endif %}
+                    </p>
+                </div>
+                <div class="bg-slate-50 rounded-xl p-3 border border-slate-200">
+                    <p class="text-xs text-slate-500">Наценка</p>
+                    <p class="text-lg font-semibold text-slate-800">
+                        {% if detail.actual_margin_pct is not none %}{{ detail.actual_margin_pct | int }}%{% else %}—{% endif %}
+                    </p>
+                </div>
+                <div class="bg-slate-50 rounded-xl p-3 border border-slate-200">
+                    <p class="text-xs text-slate-500">Изменение остатка</p>
+                    <p class="text-lg font-semibold text-slate-800">
+                        {% if detail.prev_report_date %}
+                            {% if detail.stock_change_qty >= 0 %}+{% endif %}{{ detail.stock_change_qty | int }} шт
+                        {% else %}
+                            —
+                        {% endif %}
+                    </p>
+                </div>
+                <div class="bg-slate-50 rounded-xl p-3 border border-slate-200">
+                    <p class="text-xs text-slate-500">Оборот: изменение</p>
+                    <p class="text-lg font-semibold text-slate-800">
+                        {% if detail.turnover_prev %}{% if detail.turnover_change_pct >= 0 %}+{% endif %}{{ detail.turnover_change_pct | int }}%{% else %}—{% endif %}
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Данные для графиков — передаём через JSON в скрытых тегах -->
+    <script id="trend-data" type="application/json">{{ detail.trend | tojson }}</script>
+    <script id="seasonality-data" type="application/json">{{ detail.seasonality | tojson }}</script>
+    <script id="turnover-data" type="application/json">{{ {"latest": detail.turnover_latest, "prev": detail.turnover_prev} | tojson }}</script>
+
+{% else %}
+    <div class="bg-white border border-slate-200 rounded-2xl p-6">
+        <h2 class="text-sm font-semibold text-slate-700 mb-2">Нет данных</h2>
+        <p class="text-sm text-slate-600">
+            Для артикула <span class="text-blue-500 font-semibold">{{ detail.article }}</span> пока нет данных в последнем отчёте.
+        </p>
+    </div>
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+{% if detail.found %}
+<script>
+(function () {
+    var trend = JSON.parse(document.getElementById('trend-data').textContent || '{}');
+    var trendSeries = trend.series || [];
+    var trendLabels = trendSeries.map(function (_, i) { return 'Нед ' + (i + 1); });
+    var trendValues = trendSeries.map(function (v) { return Number(v) || 0; });
+
+    var ctxT = document.getElementById('chartTrend');
+    if (ctxT && trendValues.length) {
+        new Chart(ctxT, {
+            type: 'line',
+            data: {
+                labels: trendLabels,
+                datasets: [{
+                    label: 'Продажи, шт',
+                    data: trendValues,
+                    borderColor: '#3b82f6',
+                    backgroundColor: 'rgba(59,130,246,0.07)',
+                    fill: true,
+                    tension: 0.35,
+                    pointRadius: 4,
+                    pointBackgroundColor: '#3b82f6',
+                    pointBorderColor: '#fff',
+                    pointBorderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { font: { size: 11 } } },
+                    x: { grid: { display: false }, ticks: { font: { size: 11 } } }
+                },
+                plugins: { legend: { display: false } }
+            }
+        });
+    }
+
+    var season = JSON.parse(document.getElementById('seasonality-data').textContent || '{}');
+    var monthly = season.monthly_sales || {};
+    var monthMap = {1:'Янв',2:'Фев',3:'Мар',4:'Апр',5:'Май',6:'Июн',7:'Июл',8:'Авг',9:'Сен',10:'Окт',11:'Ноя',12:'Дек'};
+    var monthKeys = Object.keys(monthly).map(function (k) { return Number(k); }).filter(function (n) { return !isNaN(n); }).sort(function (a, b) { return a - b; });
+    var seasonLabels = monthKeys.map(function (m) { return monthMap[m] || String(m); });
+    var seasonValues = monthKeys.map(function (m) { return Number(monthly[String(m)]) || 0; });
+
+    var ctxS = document.getElementById('chartSeasonality');
+    if (ctxS && seasonValues.length) {
+        new Chart(ctxS, {
+            type: 'bar',
+            data: {
+                labels: seasonLabels,
+                datasets: [{
+                    label: 'Продажи по месяцам',
+                    data: seasonValues,
+                    backgroundColor: 'rgba(99,102,241,0.35)',
+                    borderColor: '#6366f1',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { font: { size: 11 } } },
+                    x: { grid: { display: false }, ticks: { font: { size: 11 } } }
+                },
+                plugins: { legend: { display: false } }
+            }
+        });
+    }
+
+    var turnoverWrap = JSON.parse(document.getElementById('turnover-data').textContent || '{}');
+    var latest = turnoverWrap.latest || {};
+    var prev = turnoverWrap.prev || null;
+
+    var prevTurn = prev && typeof prev.turnover !== 'undefined' ? Number(prev.turnover) : 0;
+    var currTurn = latest && typeof latest.turnover !== 'undefined' ? Number(latest.turnover) : 0;
+    var chartLabels = prev ? ['Предыдущий отчёт', 'Текущий отчёт'] : ['Текущий отчёт'];
+    var chartValues = prev ? [prevTurn, currTurn] : [currTurn];
+
+    var ctxK = document.getElementById('chartTurnover');
+    if (ctxK && chartValues.length) {
+        new Chart(ctxK, {
+            type: 'bar',
+            data: {
+                labels: chartLabels,
+                datasets: [{
+                    label: 'Оборот',
+                    data: chartValues,
+                    backgroundColor: ['rgba(148,163,184,0.35)', 'rgba(59,130,246,0.35)'],
+                    borderColor: ['#94a3b8', '#3b82f6'],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { font: { size: 11 } } },
+                    x: { grid: { display: false }, ticks: { font: { size: 11 } } }
+                },
+                plugins: { legend: { display: false } }
+            }
+        });
+    }
+})();
+</script>
+{% endif %}
+{% endblock %}
+

@@ -451,3 +451,132 @@ def get_avg_turnover(db: Session) -> dict[str, Any]:
         "value": str(round(avg_monthly, 1)),
         "status": status,
     }
+
+
+def get_product_detail(
+    db: Session, *, article: str, weeks: int = 4
+) -> dict[str, Any]:
+    """
+    Детальная аналитика по одному артикулу для отдельной страницы.
+    Возвращает агрегаты и данные для графиков.
+    """
+    latest = get_latest_report(db)
+    if not latest:
+        return {"found": False, "article": article}
+
+    previous = _get_previous_report(db, latest)
+
+    # Текущие атрибуты товара (имя/группы/цена/маржа) берём из последнего отчёта.
+    latest_item = db.execute(
+        select(
+            WeeklyReportItem.article,
+            WeeklyReportItem.name,
+            WeeklyReportItem.group1,
+            WeeklyReportItem.group2,
+            WeeklyReportItem.group3,
+            WeeklyReportItem.stock_qty,
+            WeeklyReportItem.sales_qty,
+            WeeklyReportItem.store_price,
+            WeeklyReportItem.actual_margin_pct,
+        )
+        .where(
+            WeeklyReportItem.report_id == latest.id,
+            WeeklyReportItem.article == article,
+        )
+        .limit(1)
+    ).first()
+
+    name = ""
+    group1 = ""
+    group2 = ""
+    group3 = ""
+    stock_qty = 0.0
+    sales_qty = 0.0
+    store_price = None
+    actual_margin_pct = None
+
+    if latest_item:
+        _, name, group1, group2, group3, st, sq, sp, mp = latest_item
+        stock_qty = _to_float(st)
+        sales_qty = _to_float(sq)
+        store_price = _to_float(sp) if sp is not None else None
+        actual_margin_pct = _to_float(mp) if mp is not None else None
+
+    weeks_wo = get_weeks_without_sales(db, article=article)
+    seasonality = get_seasonality(db, article=article)
+    trend = get_trend(db, article=article, weeks=weeks)
+    turnover_latest = get_turnover(db, article=article, report_date=latest.report_date)
+
+    turnover_prev: dict[str, Any] | None = None
+    prev_report_date: date | None = None
+    if previous:
+        prev_report_date = previous.report_date
+        turnover_prev = get_turnover(db, article=article, report_date=previous.report_date)
+
+    prev_stock_qty = (
+        _to_float(turnover_prev.get("stock_qty")) if turnover_prev else 0.0
+    )
+    prev_sales_qty = (
+        _to_float(turnover_prev.get("sales_qty")) if turnover_prev else 0.0
+    )
+
+    sales_change_pct = 0.0
+    if prev_sales_qty > 0:
+        sales_change_pct = ((sales_qty - prev_sales_qty) / prev_sales_qty) * 100.0
+    else:
+        sales_change_pct = 100.0 if sales_qty > 0 else 0.0
+
+    stock_change_qty = stock_qty - prev_stock_qty
+
+    turnover_curr = _to_float(turnover_latest.get("turnover"))
+    turnover_prev_val = _to_float(turnover_prev.get("turnover")) if turnover_prev else 0.0
+    turnover_change_pct = 0.0
+    if turnover_prev_val > 0:
+        turnover_change_pct = ((turnover_curr - turnover_prev_val) / turnover_prev_val) * 100.0
+    else:
+        turnover_change_pct = 100.0 if turnover_curr > 0 else 0.0
+
+    # Статус остатка — та же логика, что и на главной странице остатков.
+    if sales_qty > 0 and stock_qty > 0:
+        ratio = stock_qty / sales_qty
+        if ratio < 1:
+            stock_status = "critical"
+        elif ratio < 2:
+            stock_status = "low"
+        else:
+            stock_status = "ok"
+    elif stock_qty == 0:
+        stock_status = "empty"
+    else:
+        stock_status = "ok"
+
+    return {
+        "found": latest_item is not None,
+        "article": article,
+        "name": name,
+        "group1": group1,
+        "group2": group2,
+        "group3": group3,
+        "report_date": str(latest.report_date),
+        "prev_report_date": str(prev_report_date) if prev_report_date else None,
+        # Текущие показатели
+        "stock_qty": stock_qty,
+        "sales_qty": sales_qty,
+        "sales_per_day": round(sales_qty / 7, 1) if sales_qty > 0 else 0.0,
+        "store_price": store_price,
+        "actual_margin_pct": actual_margin_pct,
+        "stock_status": stock_status,
+        # Сравнение с предыдущим отчётом
+        "prev_sales_qty": prev_sales_qty,
+        "prev_stock_qty": prev_stock_qty,
+        "sales_change_pct": round(float(sales_change_pct), 2),
+        "stock_change_qty": round(float(stock_change_qty), 0),
+        # Отдельные метрики для блоков/графиков
+        "weeks_without_sales": int(weeks_wo.get("weeks_without_sales") or 0),
+        "last_sale_date": weeks_wo.get("last_sale_date"),
+        "seasonality": seasonality,
+        "trend": trend,
+        "turnover_latest": turnover_latest,
+        "turnover_prev": turnover_prev,
+        "turnover_change_pct": round(float(turnover_change_pct), 2),
+    }

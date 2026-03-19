@@ -25,26 +25,46 @@
 
 {# ── KPI-карточки ────────────────────────────────────────────────────────── #}
 <div class="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-5">
-    <div class="bg-white border border-slate-200 rounded-xl px-4 py-3">
+    <button id="kpiTotal"
+            type="button"
+            data-kpi="all"
+            onclick="setKpiFilter('all')"
+            class="kpi-card bg-white border border-slate-200 rounded-xl px-4 py-3 text-left
+                   shadow-sm transition-colors hover:bg-slate-50 hover:shadow cursor-pointer">
         <p class="text-xs text-slate-400 font-medium mb-1">Всего позиций</p>
-        <p class="text-2xl font-bold text-slate-800">{{ kpi.total_sku }}</p>
+        <p class="text-2xl font-bold text-slate-800"><span id="kpiTotalValue">{{ kpi.total_sku }}</span></p>
         <p class="text-xs text-slate-400 mt-0.5">SKU в базе</p>
-    </div>
-    <div class="bg-white border border-slate-200 rounded-xl px-4 py-3">
+    </button>
+    <button id="kpiInStock"
+            type="button"
+            data-kpi="in_stock"
+            onclick="setKpiFilter('in_stock')"
+            class="kpi-card bg-white border border-slate-200 rounded-xl px-4 py-3 text-left
+                   shadow-sm transition-colors hover:bg-slate-50 hover:shadow cursor-pointer">
         <p class="text-xs text-slate-400 font-medium mb-1">В наличии</p>
-        <p class="text-2xl font-bold text-green-600">{{ kpi.in_stock }}</p>
+        <p class="text-2xl font-bold text-green-600"><span id="kpiInStockValue">{{ kpi.in_stock }}</span></p>
         <p class="text-xs text-slate-400 mt-0.5">норма запаса</p>
-    </div>
-    <div class="bg-white border border-slate-200 rounded-xl px-4 py-3">
+    </button>
+    <button id="kpiLowCritical"
+            type="button"
+            data-kpi="low_critical"
+            onclick="setKpiFilter('low_critical')"
+            class="kpi-card bg-white border border-slate-200 rounded-xl px-4 py-3 text-left
+                   shadow-sm transition-colors hover:bg-slate-50 hover:shadow cursor-pointer">
         <p class="text-xs text-slate-400 font-medium mb-1">Низкий/Критический</p>
-        <p class="text-2xl font-bold text-amber-500">{{ kpi.critical_count }}</p>
+        <p class="text-2xl font-bold text-amber-500"><span id="kpiLowCriticalValue">{{ kpi.critical_count }}</span></p>
         <p class="text-xs text-slate-400 mt-0.5">требуют заказа</p>
-    </div>
-    <div class="bg-white border border-slate-200 rounded-xl px-4 py-3">
+    </button>
+    <button id="kpiSeasonal"
+            type="button"
+            data-kpi="seasonal"
+            onclick="setKpiFilter('seasonal')"
+            class="kpi-card bg-white border border-slate-200 rounded-xl px-4 py-3 text-left
+                   shadow-sm transition-colors hover:bg-slate-50 hover:shadow cursor-pointer">
         <p class="text-xs text-slate-400 font-medium mb-1">Сезонные товары</p>
-        <p class="text-2xl font-bold text-violet-500">{{ kpi.seasonal_count }}</p>
+        <p class="text-2xl font-bold text-violet-500"><span id="kpiSeasonalValue">{{ kpi.seasonal_count }}</span></p>
         <p class="text-xs text-slate-400 mt-0.5">по данным продаж</p>
-    </div>
+    </button>
 </div>
 
 {# ── Фильтры ─────────────────────────────────────────────────────────────── #}
@@ -140,7 +160,7 @@
               Числа передаём напрямую — они безопасны.
               Это позволяет избежать конфликта кавычек Jinja/JS.
             #}
-            <tr class="table-row border-b border-slate-50 hover:bg-slate-50 transition-colors {{ row_bg }}"
+            <tr class="table-row cursor-pointer border-b border-slate-50 hover:bg-slate-50 transition-colors {{ row_bg }}"
                 data-article="{{ r.article }}"
                 data-name="{{ r.name }}"
                 data-g1="{{ r.group1 }}"
@@ -148,6 +168,8 @@
                 data-g3="{{ r.group3 }}"
                 data-stock="{{ r.stock_qty }}"
                 data-sales="{{ r.sales_qty }}"
+                data-stock-status="{{ r.stock_status }}"
+                data-seasonal="{{ 1 if r.is_seasonal else 0 }}"
                 data-margin="{{ r.actual_margin_pct }}"
                 data-price="{{ r.store_price or 0 }}">
 
@@ -258,30 +280,99 @@
 const tableRows   = document.querySelectorAll('.table-row');
 const visibleCount = document.getElementById('visibleCount');
 
+// KPI-карточки сверху — дополнительные фильтры таблицы.
+// all | in_stock | low_critical | seasonal
+var kpiFilter = 'all';
+
+function applyKpiActive() {
+    var cards = [
+        { id: 'kpiTotal',        kpi: 'all',           bg: 'bg-blue-50',    border: 'border-blue-200',  ring: 'ring-blue-100' },
+        { id: 'kpiInStock',     kpi: 'in_stock',     bg: 'bg-green-50',   border: 'border-green-200', ring: 'ring-green-100' },
+        { id: 'kpiLowCritical', kpi: 'low_critical', bg: 'bg-amber-50',   border: 'border-amber-200', ring: 'ring-amber-100' },
+        { id: 'kpiSeasonal',    kpi: 'seasonal',     bg: 'bg-violet-50',  border: 'border-violet-200', ring: 'ring-violet-100' },
+    ];
+
+    cards.forEach(function (c) {
+        var el = document.getElementById(c.id);
+        if (!el) return;
+        var isActive = kpiFilter === c.kpi;
+        el.classList.toggle(c.bg, isActive);
+        el.classList.toggle(c.border, isActive);
+        el.classList.toggle(c.ring, isActive);
+        el.classList.toggle('ring-2', isActive);
+    });
+}
+
+function setKpiFilter(next) {
+    kpiFilter = (kpiFilter === next) ? 'all' : next;
+    applyKpiActive();
+    applyFilters();
+}
+
 function applyFilters() {
     const search = (document.getElementById('searchInput').value || '').toLowerCase();
     const g1     = document.getElementById('filterG1').value;
     const g2     = document.getElementById('filterG2').value;
     const g3     = document.getElementById('filterG3').value;
 
+    var countAll = 0;
+    var countInStock = 0;
+    var countLowCritical = 0;
+    var countSeasonal = 0;
+
     let visible = 0;
     tableRows.forEach(function(row) {
         const article = (row.dataset.article || '').toLowerCase();
         const name    = (row.dataset.name    || '').toLowerCase();
+        const stockStatus = row.dataset.stockStatus || '';
+        const seasonal    = row.dataset.seasonal || '0';
         const ok = (!search || article.includes(search) || name.includes(search))
                 && (!g1 || row.dataset.g1 === g1)
                 && (!g2 || row.dataset.g2 === g2)
                 && (!g3 || row.dataset.g3 === g3);
-        row.style.display = ok ? '' : 'none';
-        if (ok) visible++;
+
+        // KPI цифры должны соответствовать текущему контексту (поиск + группы),
+        // но НЕ зависят от выбранной плашки сверху.
+        if (ok) {
+            countAll++;
+            // "В наличии" в UI = достаточный запас (ок), а не просто ненулевой остаток.
+            if (stockStatus === 'ok') countInStock++;
+            if (stockStatus === 'low' || stockStatus === 'critical') countLowCritical++;
+            if (seasonal === '1') countSeasonal++;
+        }
+
+        let okKpi = true;
+        if (kpiFilter === 'in_stock') {
+            okKpi = stockStatus === 'ok';
+        } else if (kpiFilter === 'low_critical') {
+            okKpi = stockStatus === 'low' || stockStatus === 'critical';
+        } else if (kpiFilter === 'seasonal') {
+            okKpi = seasonal === '1';
+        }
+
+        const visibleRow = ok && okKpi;
+        row.style.display = visibleRow ? '' : 'none';
+        if (visibleRow) visible++;
     });
     if (visibleCount) visibleCount.textContent = visible;
+
+    var elTotal = document.getElementById('kpiTotalValue');
+    var elInStock = document.getElementById('kpiInStockValue');
+    var elLowCritical = document.getElementById('kpiLowCriticalValue');
+    var elSeasonal = document.getElementById('kpiSeasonalValue');
+    if (elTotal) elTotal.textContent = countAll;
+    if (elInStock) elInStock.textContent = countInStock;
+    if (elLowCritical) elLowCritical.textContent = countLowCritical;
+    if (elSeasonal) elSeasonal.textContent = countSeasonal;
 }
 
 document.getElementById('searchInput').addEventListener('input',  applyFilters);
 document.getElementById('filterG1').addEventListener('change', applyFilters);
 document.getElementById('filterG2').addEventListener('change', applyFilters);
 document.getElementById('filterG3').addEventListener('change', applyFilters);
+
+applyKpiActive();
+applyFilters();
 
 
 // ── Сортировка ────────────────────────────────────────────────────────────
@@ -367,5 +458,23 @@ function postOrder(article, name, qty, price) {
         body:    JSON.stringify({ article: article, name: name, qty: qty, store_price: price }),
     }).then(function(r) { return r.ok; }).catch(function() { return false; });
 }
+
+// ── Переход в карточку аналитики товара ─────────────────────────────────
+// Кликаем по строке, но не мешаем кликам по чекбоксу/кнопкам.
+tableRows.forEach(function (row) {
+    row.addEventListener('click', function (e) {
+        var target = e.target;
+        if (!target || !target.closest) return;
+
+        if (target.closest('input[type="checkbox"]')) return;
+        if (target.closest('button')) return;
+        if (target.closest('a')) return;
+
+        var article = row.dataset.article || '';
+        if (!article) return;
+
+        window.location.href = '/analytics/item/' + encodeURIComponent(article);
+    });
+});
 </script>
 {% endblock %}

@@ -9,6 +9,7 @@ from app.core.database import get_db
 from app.core.templates import templates
 from app.services.analytics_service import (
     build_analytics_table,
+    get_product_detail,
     get_seasonality,
     get_trend,
     get_turnover,
@@ -62,3 +63,21 @@ def analytics_article(
         "trend":               get_trend(db, article=article, weeks=weeks),
         "turnover":            get_turnover(db, article=article, report_date=report_date),
     }
+
+
+@router.get("/item/{article}", response_class=HTMLResponse)
+def product_item_page(
+    request: Request,
+    article: str,
+    weeks: int = Query(4, ge=2, le=52),
+    db: Session = Depends(get_db),
+):
+    detail = get_product_detail(db, article=article, weeks=weeks)
+    return templates.TemplateResponse(
+        "product_analytics.html",
+        {
+            "request":     request,
+            "active_page": "analytics",
+            "detail":      detail,
+        },
+    )
