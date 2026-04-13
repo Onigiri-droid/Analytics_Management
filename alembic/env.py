@@ -10,7 +10,16 @@ from alembic import context
 load_dotenv()
 
 from app.core.database import Base
-from app.models import Product, Upload, ProductSnapshot, WeeklyReport, WeeklyReportItem, OrderItem
+from app.models import (
+    OrderItem,
+    PasswordResetToken,
+    Product,
+    ProductSnapshot,
+    Upload,
+    User,
+    WeeklyReport,
+    WeeklyReportItem,
+)
 
 config = context.config
 if config.config_file_name is not None:

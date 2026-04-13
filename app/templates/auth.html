@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Авторизация | МПР Аналитика</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Golos Text', 'sans-serif'] }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="min-h-screen bg-slate-100 font-sans flex items-center justify-center p-4">
+    <div class="w-full max-w-md bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8">
+        <div class="mb-6 text-center">
+            <h1 class="text-2xl font-bold text-slate-800">МПР Аналитика</h1>
+            <p class="text-sm text-slate-500 mt-1">Вход и регистрация</p>
+        </div>
+
+        {% if error %}
+            <div class="mb-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3">{{ error }}</div>
+        {% endif %}
+        {% if message %}
+            <div class="mb-4 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm px-4 py-3">{{ message }}</div>
+        {% endif %}
+
+        <div class="flex rounded-xl bg-slate-100 p-1 mb-5">
+            <button type="button" data-tab="login" class="auth-tab flex-1 py-2 text-sm rounded-lg">Вход</button>
+            <button type="button" data-tab="register" class="auth-tab flex-1 py-2 text-sm rounded-lg">Регистрация</button>
+            <button type="button" data-tab="forgot" class="auth-tab flex-1 py-2 text-sm rounded-lg">Сброс</button>
+        </div>
+
+        <form method="post" action="/auth/login" class="space-y-4 auth-form" data-form="login">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div>
+                <label class="text-sm text-slate-600 block mb-1">Email</label>
+                <input name="email" type="email" required class="w-full rounded-lg border border-slate-300 px-3 py-2 focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none">
+            </div>
+            <div>
+                <label class="text-sm text-slate-600 block mb-1">Пароль</label>
+                <input name="password" type="password" required class="w-full rounded-lg border border-slate-300 px-3 py-2 focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none">
+            </div>
+            <button class="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-lg py-2.5 font-medium">Войти</button>
+        </form>
+
+        <form method="post" action="/auth/register" class="space-y-4 auth-form hidden" data-form="register">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div>
+                <label class="text-sm text-slate-600 block mb-1">Имя</label>
+                <input name="full_name" type="text" required minlength="2" class="w-full rounded-lg border border-slate-300 px-3 py-2 focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none">
+            </div>
+            <div>
+                <label class="text-sm text-slate-600 block mb-1">Email</label>
+                <input name="email" type="email" required class="w-full rounded-lg border border-slate-300 px-3 py-2 focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none">
+            </div>
+            <div>
+                <label class="text-sm text-slate-600 block mb-1">Пароль</label>
+                <input name="password" type="password" required minlength="8" class="w-full rounded-lg border border-slate-300 px-3 py-2 focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none">
+                <p class="text-xs text-slate-500 mt-1">Минимум 8 символов, буквы и цифры.</p>
+            </div>
+            <div>
+                <label class="text-sm text-slate-600 block mb-1">Повторите пароль</label>
+                <input name="password_repeat" type="password" required minlength="8" class="w-full rounded-lg border border-slate-300 px-3 py-2 focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none">
+            </div>
+            <button class="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-lg py-2.5 font-medium">Создать аккаунт</button>
+        </form>
+
+        <form method="post" action="/auth/forgot" class="space-y-4 auth-form hidden" data-form="forgot">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div>
+                <label class="text-sm text-slate-600 block mb-1">Email для восстановления</label>
+                <input name="email" type="email" required class="w-full rounded-lg border border-slate-300 px-3 py-2 focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none">
+            </div>
+            <button class="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-lg py-2.5 font-medium">Отправить ссылку</button>
+        </form>
+    </div>
+
+    <script>
+        const activeTab = "{{ active_tab or 'login' }}";
+        const tabs = document.querySelectorAll(".auth-tab");
+        const forms = document.querySelectorAll(".auth-form");
+
+        function selectTab(tabName) {
+            tabs.forEach((tab) => {
+                const isActive = tab.dataset.tab === tabName;
+                tab.classList.toggle("bg-white", isActive);
+                tab.classList.toggle("text-slate-800", isActive);
+                tab.classList.toggle("font-semibold", isActive);
+                tab.classList.toggle("text-slate-500", !isActive);
+            });
+            forms.forEach((form) => {
+                form.classList.toggle("hidden", form.dataset.form !== tabName);
+            });
+        }
+
+        tabs.forEach((tab) => tab.addEventListener("click", () => selectTab(tab.dataset.tab)));
+        selectTab(activeTab);
+    </script>
+</body>
+</html>

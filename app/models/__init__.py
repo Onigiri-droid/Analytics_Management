@@ -3,6 +3,8 @@ from app.models.upload import Upload
 from app.models.product_snapshot import ProductSnapshot
 from app.models.weekly_report import WeeklyReport, WeeklyReportItem
 from app.models.order import OrderItem
+from app.models.user import User
+from app.models.password_reset_token import PasswordResetToken
 
 __all__ = [
     "Product",
@@ -11,4 +13,6 @@ __all__ = [
     "WeeklyReport",
     "WeeklyReportItem",
     "OrderItem",
+    "User",
+    "PasswordResetToken",
 ]
