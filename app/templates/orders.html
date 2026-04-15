@@ -109,16 +109,22 @@
                         <input type="checkbox" id="checkAllOrders"
                                class="rounded border-slate-300 text-blue-500 focus:ring-blue-400">
                     </th>
-                    <th class="px-4 py-3 text-left w-36">Артикул</th>
-                    <th class="px-4 py-3 text-left">Наименование</th>
-                    <th class="px-4 py-3 text-left w-44">Категория</th>
-                    <th class="px-4 py-3 text-right w-28">Остаток</th>
-                    <th class="px-4 py-3 text-right w-44">К заказу (шт)</th>
-                    <th class="px-4 py-3 text-right w-36">Сумма (₽)</th>
+                    <th class="px-4 py-3 text-left w-36 cursor-pointer hover:text-slate-600 select-none"
+                        onclick="sortOrderTable('article')">Артикул <span>&#x2195;</span></th>
+                    <th class="px-4 py-3 text-left cursor-pointer hover:text-slate-600 select-none"
+                        onclick="sortOrderTable('name')">Наименование <span>&#x2195;</span></th>
+                    <th class="px-4 py-3 text-left w-44 cursor-pointer hover:text-slate-600 select-none"
+                        onclick="sortOrderTable('category')">Категория <span>&#x2195;</span></th>
+                    <th class="px-4 py-3 text-right w-28 cursor-pointer hover:text-slate-600 select-none"
+                        onclick="sortOrderTable('stock')">Остаток <span>&#x2195;</span></th>
+                    <th class="px-4 py-3 text-right w-44 cursor-pointer hover:text-slate-600 select-none"
+                        onclick="sortOrderTable('qty')">К заказу (шт) <span>&#x2195;</span></th>
+                    <th class="px-4 py-3 text-right w-36 cursor-pointer hover:text-slate-600 select-none"
+                        onclick="sortOrderTable('lineTotal')">Сумма (₽) <span>&#x2195;</span></th>
                     <th class="px-4 py-3 w-10"></th>
                 </tr>
             </thead>
-            <tbody>
+            <tbody id="orderTableBody">
             {% for r in rows %}
                 <tr class="order-row border-b border-slate-50 hover:bg-slate-50 transition-colors cursor-pointer"
                     data-article="{{ r.article }}"
@@ -127,7 +133,8 @@
                     data-stock-qty="{{ r.stock_qty or 0 }}"
                     data-stock-status="{{ r.stock_status }}"
                     data-qty="{{ r.qty | int }}"
-                    data-price="{{ r.store_price or 0 }}">
+                    data-price="{{ r.store_price or 0 }}"
+                    data-line-total="{{ (r.total | int) if r.total else 0 }}">
                     <td class="px-4 py-3">
                         <input type="checkbox"
                                class="order-check rounded border-slate-300 text-blue-500 focus:ring-blue-400"
@@ -320,6 +327,8 @@
 
         var exportSel = document.getElementById('exportSelectedCount');
         if (exportSel) exportSel.textContent = fmtInt(positions);
+        var exportTotal = document.getElementById('exportTotalCount');
+        if (exportTotal) exportTotal.textContent = fmtInt(rows.length);
         var grandTotal = document.getElementById('grandTotal');
         if (grandTotal) grandTotal.textContent = '₽' + fmtInt(priceSum);
     }
@@ -327,9 +336,11 @@
     function updateRowTotal(tr, qty) {
         var price = parseFloat(tr.dataset.price) || 0;
         var totalCell = tr.querySelector('.total-cell');
+        var lineTotal = price ? Math.round(qty * price) : 0;
+        tr.dataset.lineTotal = String(lineTotal);
         if (totalCell) {
             if (!price) totalCell.textContent = '—';
-            else totalCell.textContent = '₽' + fmtInt(qty * price);
+            else totalCell.textContent = '₽' + fmtInt(lineTotal);
         }
         tr.dataset.qty = String(qty);
     }
@@ -511,6 +522,37 @@
     // init
     applyFilters();
 })();
+
+// ── Сортировка (как на вкладке «Остатки») ──────────────────────────────────
+var orderSortField = null, orderSortAsc = true;
+
+function sortOrderTable(field) {
+    orderSortAsc = (orderSortField === field) ? !orderSortAsc : true;
+    orderSortField = field;
+
+    var tbody = document.getElementById('orderTableBody');
+    if (!tbody) return;
+    var rowsArr = Array.from(tbody.querySelectorAll('tr.order-row'));
+    var keyMap = {
+        article: 'article',
+        name: 'name',
+        category: 'category',
+        stock: 'stockQty',
+        qty: 'qty',
+        lineTotal: 'lineTotal'
+    };
+    var attr = keyMap[field] || field;
+
+    rowsArr.sort(function(a, b) {
+        var va = a.dataset[attr] || '';
+        var vb = b.dataset[attr] || '';
+        var na = parseFloat(va);
+        var nb = parseFloat(vb);
+        if (!isNaN(na) && !isNaN(nb)) return orderSortAsc ? na - nb : nb - na;
+        return orderSortAsc ? va.localeCompare(vb, 'ru') : vb.localeCompare(va, 'ru');
+    });
+    rowsArr.forEach(function(r) { tbody.appendChild(r); });
+}
 </script>
 {% else %}
 <div class="bg-white border border-slate-200 rounded-2xl p-12 text-center max-w-md mx-auto">
