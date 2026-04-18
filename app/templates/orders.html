@@ -66,7 +66,7 @@
             <select id="filterCategory"
                     class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-slate-50
                            focus:outline-none focus:ring-2 focus:ring-blue-400">
-                <option value="">Все категории</option>
+                <option value="">Все группы</option>
             </select>
         </div>
 
@@ -102,26 +102,28 @@
     </div>
 
     <div class="overflow-x-auto">
-        <table class="w-full text-sm">
+        <table class="w-full min-w-[1140px] table-fixed border-collapse text-sm">
             <thead>
                 <tr class="border-b border-slate-100 text-xs text-slate-400 uppercase tracking-wide">
-                    <th class="px-4 py-3 text-left w-10">
+                    <th class="px-3 py-3 text-left align-middle whitespace-nowrap w-10">
                         <input type="checkbox" id="checkAllOrders"
                                class="rounded border-slate-300 text-blue-500 focus:ring-blue-400">
                     </th>
-                    <th class="px-4 py-3 text-left w-36 cursor-pointer hover:text-slate-600 select-none"
+                    <th class="px-3 py-3 text-left align-middle whitespace-nowrap w-36 cursor-pointer hover:text-slate-600 select-none"
                         onclick="sortOrderTable('article')">Артикул <span>&#x2195;</span></th>
-                    <th class="px-4 py-3 text-left cursor-pointer hover:text-slate-600 select-none"
+                    <th class="px-3 py-3 text-left align-middle whitespace-nowrap w-[300px] cursor-pointer hover:text-slate-600 select-none"
                         onclick="sortOrderTable('name')">Наименование <span>&#x2195;</span></th>
-                    <th class="px-4 py-3 text-left w-44 cursor-pointer hover:text-slate-600 select-none"
-                        onclick="sortOrderTable('category')">Категория <span>&#x2195;</span></th>
-                    <th class="px-4 py-3 text-right w-28 cursor-pointer hover:text-slate-600 select-none"
+                    <th class="px-3 py-3 text-left align-middle whitespace-nowrap w-44 cursor-pointer hover:text-slate-600 select-none"
+                        onclick="sortOrderTable('productGroup')">Группа <span>&#x2195;</span></th>
+                    <th class="px-3 py-3 text-center align-middle whitespace-nowrap w-40 cursor-pointer hover:text-slate-600 select-none"
+                        onclick="sortOrderTable('priceCategory')">Категория <span>&#x2195;</span></th>
+                    <th class="px-3 py-3 text-right align-middle whitespace-nowrap w-28 cursor-pointer hover:text-slate-600 select-none"
                         onclick="sortOrderTable('stock')">Остаток <span>&#x2195;</span></th>
-                    <th class="px-4 py-3 text-right w-44 cursor-pointer hover:text-slate-600 select-none"
+                    <th class="px-3 py-3 text-center align-middle whitespace-nowrap w-44 cursor-pointer hover:text-slate-600 select-none"
                         onclick="sortOrderTable('qty')">К заказу (шт) <span>&#x2195;</span></th>
-                    <th class="px-4 py-3 text-right w-36 cursor-pointer hover:text-slate-600 select-none"
+                    <th class="px-3 py-3 text-right align-middle whitespace-nowrap w-36 cursor-pointer hover:text-slate-600 select-none"
                         onclick="sortOrderTable('lineTotal')">Сумма (₽) <span>&#x2195;</span></th>
-                    <th class="px-4 py-3 w-10"></th>
+                    <th class="px-3 py-3 text-center align-middle whitespace-nowrap w-16"></th>
                 </tr>
             </thead>
             <tbody id="orderTableBody">
@@ -129,26 +131,34 @@
                 <tr class="order-row border-b border-slate-50 hover:bg-slate-50 transition-colors cursor-pointer"
                     data-article="{{ r.article }}"
                     data-name="{{ r.name }}"
-                    data-category="{{ r.category or '' }}"
+                    data-product-group="{{ r.product_group or '' }}"
+                    data-price-category="{{ r.price_category or '' }}"
                     data-stock-qty="{{ r.stock_qty or 0 }}"
                     data-stock-status="{{ r.stock_status }}"
                     data-qty="{{ r.qty | int }}"
                     data-price="{{ r.store_price or 0 }}"
                     data-line-total="{{ (r.total | int) if r.total else 0 }}">
-                    <td class="px-4 py-3">
+                    <td class="px-3 py-3">
                         <input type="checkbox"
                                class="order-check rounded border-slate-300 text-blue-500 focus:ring-blue-400"
                                checked>
                     </td>
-                    <td class="px-4 py-3 font-mono text-xs text-slate-500 whitespace-nowrap">
+                    <td class="px-3 py-3 font-mono text-xs text-slate-500 whitespace-nowrap">
                         {{ r.article }}
                     </td>
-                    <td class="px-4 py-3 font-medium text-slate-800 max-w-xs truncate"
-                        title="{{ r.name }}">{{ r.name or "—" }}</td>
-                    <td class="px-4 py-3 text-xs text-slate-400 whitespace-nowrap">
-                        {{ r.category or "—" }}
+                    <td class="px-3 py-3 font-medium text-slate-800">
+                        <p class="truncate" title="{{ r.name }}">{{ r.name or "—" }}</p>
                     </td>
-                    <td class="px-4 py-3 text-right whitespace-nowrap">
+                    <td class="px-3 py-3 text-xs text-slate-400 whitespace-nowrap">
+                        {% if r.product_group %}<p class="text-slate-600 font-medium truncate" title="{{ r.product_group }}">{{ r.product_group }}</p>{% endif %}
+                        {% if r.product_group_2 %}<p class="truncate" title="{{ r.product_group_2 }}">→ {{ r.product_group_2 }}</p>{% endif %}
+                        {% if r.product_group_3 %}<p class="truncate" title="{{ r.product_group_3 }}">{{ r.product_group_3 }}</p>{% endif %}
+                        {% if not r.product_group and not r.product_group_2 and not r.product_group_3 %}<p>—</p>{% endif %}
+                    </td>
+                    <td class="px-3 py-3 text-xs text-slate-500 text-center">
+                        <p class="truncate" title="{{ r.price_category or '—' }}">{{ r.price_category or "—" }}</p>
+                    </td>
+                    <td class="px-3 py-3 text-right whitespace-nowrap">
                         {% if r.stock_status == 'critical' %}
                             <div class="font-semibold text-red-500 text-right">{{ r.stock_qty | int }} шт</div>
                             {% if r.min_order_qty %}
@@ -168,7 +178,7 @@
                             {% endif %}
                         {% endif %}
                     </td>
-                    <td class="px-4 py-3 text-right">
+                    <td class="px-3 py-3 text-right">
                         <div class="flex items-center justify-end gap-2">
                             <button type="button"
                                     class="qty-btn w-7 h-7 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-600
@@ -191,13 +201,13 @@
                             </button>
                         </div>
                     </td>
-                    <td class="px-4 py-3 text-right font-semibold text-slate-800 total-cell">
+                    <td class="px-3 py-3 text-right font-semibold text-slate-800 total-cell">
                         {% if r.total %}₽{{ r.total | int }}{% else %}—{% endif %}
                     </td>
-                    <td class="px-4 py-3 text-center" onclick="event.stopPropagation()">
+                    <td class="px-3 py-3 text-center" onclick="event.stopPropagation()">
                         <button type="button"
                                 onclick="removeItem(this);"
-                                class="w-7 h-7 rounded-lg bg-red-50 hover:bg-red-500 text-red-400
+                                class="mx-auto w-8 h-8 rounded-lg bg-red-50 hover:bg-red-500 text-red-400
                                        hover:text-white transition-colors flex items-center justify-center"
                                 title="Удалить">
                             <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24"
@@ -243,7 +253,7 @@
     if (filterCategory) {
         var set = {};
         rows.forEach(function(tr) {
-            var cat = tr.dataset.category || '';
+            var cat = tr.dataset.productGroup || '';
             if (cat) set[cat] = true;
         });
         Object.keys(set).sort(function(a,b){ return a.localeCompare(b,'ru'); }).forEach(function(cat) {
@@ -263,12 +273,13 @@
         rows.forEach(function(tr) {
             var article = (tr.dataset.article || '').toLowerCase();
             var name = (tr.dataset.name || '').toLowerCase();
-            var category = (tr.dataset.category || '').toLowerCase();
+            var productGroup = (tr.dataset.productGroup || '').toLowerCase();
+            var priceCategory = (tr.dataset.priceCategory || '').toLowerCase();
             var stockStatus = tr.dataset.stockStatus || '';
             var stockQty = Number(tr.dataset.stockQty || 0);
 
-            var okSearch = !q || article.includes(q) || name.includes(q) || category.includes(q);
-            var okCat = !cat || tr.dataset.category === cat;
+            var okSearch = !q || article.includes(q) || name.includes(q) || productGroup.includes(q) || priceCategory.includes(q);
+            var okCat = !cat || tr.dataset.productGroup === cat;
             var okStatus = !st || stockStatus === st;
             var okStock = minStock === null || stockQty >= minStock;
 
@@ -536,7 +547,8 @@ function sortOrderTable(field) {
     var keyMap = {
         article: 'article',
         name: 'name',
-        category: 'category',
+        productGroup: 'productGroup',
+        priceCategory: 'priceCategory',
         stock: 'stockQty',
         qty: 'qty',
         lineTotal: 'lineTotal'

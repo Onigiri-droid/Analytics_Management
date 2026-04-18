@@ -227,6 +227,7 @@ def build_analytics_table(
             WeeklyReportItem.group1,
             WeeklyReportItem.group2,
             WeeklyReportItem.group3,
+            WeeklyReportItem.price_category,
             WeeklyReportItem.stock_qty,
             WeeklyReportItem.sales_qty,
             WeeklyReportItem.store_price,
@@ -294,7 +295,7 @@ def build_analytics_table(
     rows: list[dict[str, Any]] = []
     seasonal_count = 0
 
-    for article, name, group1, group2, group3, stock_qty, sales_qty, store_price, margin_pct in items:
+    for article, name, group1, group2, group3, price_category, stock_qty, sales_qty, store_price, margin_pct in items:
         art = str(article) if article is not None else ""
         hist = history_map.get(art, [])
 
@@ -365,6 +366,7 @@ def build_analytics_table(
                 "group1": group1 or "",
                 "group2": group2 or "",
                 "group3": group3 or "",
+                "price_category": price_category or "",
                 "stock_qty": st,
                 "sales_qty": s,
                 "sales_per_day": sales_per_day,

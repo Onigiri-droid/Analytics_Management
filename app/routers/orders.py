@@ -57,6 +57,9 @@ def orders_page(request: Request, db: Session = Depends(get_db)):
                 WeeklyReportItem.article,
                 WeeklyReportItem.name,
                 WeeklyReportItem.group1,
+                WeeklyReportItem.group2,
+                WeeklyReportItem.group3,
+                WeeklyReportItem.price_category,
                 WeeklyReportItem.stock_qty,
                 WeeklyReportItem.sales_qty,
             )
@@ -66,11 +69,14 @@ def orders_page(request: Request, db: Session = Depends(get_db)):
             )
         ).all()
 
-        for art, name, group1, stock_qty, sales_qty in latest_rows:
+        for art, name, group1, group2, group3, price_category, stock_qty, sales_qty in latest_rows:
             a = str(art)
             latest_items_by_article[a] = {
                 "name": name or "",
-                "category": group1 or "",
+                "product_group": group1 or "",
+                "product_group_2": group2 or "",
+                "product_group_3": group3 or "",
+                "price_category": price_category or "",
                 "stock_qty": float(stock_qty or 0),
                 "sales_qty": float(sales_qty or 0),
             }
@@ -93,7 +99,10 @@ def orders_page(request: Request, db: Session = Depends(get_db)):
         latest = latest_items_by_article.get(article, {})
 
         name = i.name or latest.get("name") or ""
-        category = latest.get("category") or ""
+        product_group = latest.get("product_group") or ""
+        product_group_2 = latest.get("product_group_2") or ""
+        product_group_3 = latest.get("product_group_3") or ""
+        price_category = latest.get("price_category") or ""
         stock_qty = float(latest.get("stock_qty") or 0)
         sales_qty = float(latest.get("sales_qty") or 0)
 
@@ -108,7 +117,10 @@ def orders_page(request: Request, db: Session = Depends(get_db)):
             {
                 "article": article,
                 "name": name,
-                "category": category,
+                "product_group": product_group,
+                "product_group_2": product_group_2,
+                "product_group_3": product_group_3,
+                "price_category": price_category,
                 "qty": qty,
                 "store_price": store_price,
                 "stock_qty": stock_qty,
@@ -190,7 +202,7 @@ def export_orders_excel(payload: ExportExcelRequest, db: Session = Depends(get_d
         wb = Workbook()
         ws = wb.active
         ws.title = "Заказ"
-        ws.append(["Артикул", "Наименование", "Категория", "Остаток", "К заказу (шт)", "Цена (₽)", "Сумма (₽)"])
+        ws.append(["Артикул", "Наименование", "Группа", "Категория", "Остаток", "К заказу (шт)", "Цена (₽)", "Сумма (₽)"])
         buf = BytesIO()
         wb.save(buf)
         buf.seek(0)
@@ -225,6 +237,7 @@ def export_orders_excel(payload: ExportExcelRequest, db: Session = Depends(get_d
                 WeeklyReportItem.article,
                 WeeklyReportItem.name,
                 WeeklyReportItem.group1,
+                WeeklyReportItem.price_category,
                 WeeklyReportItem.stock_qty,
                 WeeklyReportItem.sales_qty,
             )
@@ -234,10 +247,11 @@ def export_orders_excel(payload: ExportExcelRequest, db: Session = Depends(get_d
             )
         ).all()
 
-        for art, name, group1, stock_qty, sales_qty in latest_rows:
+        for art, name, group1, price_category, stock_qty, sales_qty in latest_rows:
             latest_items_by_article[str(art)] = {
                 "name": name or "",
-                "category": group1 or "",
+                "product_group": group1 or "",
+                "price_category": price_category or "",
                 "stock_qty": float(stock_qty or 0),
                 "sales_qty": float(sales_qty or 0),
             }
@@ -246,14 +260,15 @@ def export_orders_excel(payload: ExportExcelRequest, db: Session = Depends(get_d
     ws = wb.active
     ws.title = "Заказ"
 
-    ws.append(["Артикул", "Наименование", "Категория", "Остаток", "К заказу (шт)", "Цена (₽)", "Сумма (₽)"])
+    ws.append(["Артикул", "Наименование", "Группа", "Категория", "Остаток", "К заказу (шт)", "Цена (₽)", "Сумма (₽)"])
 
     for i in items:
         article = str(i.article)
         latest = latest_items_by_article.get(article, {})
 
         name = i.name or latest.get("name") or ""
-        category = latest.get("category") or ""
+        product_group = latest.get("product_group") or ""
+        price_category = latest.get("price_category") or ""
         stock_qty = float(latest.get("stock_qty") or 0)
         sales_qty = float(latest.get("sales_qty") or 0)
         stock_status = compute_stock_status(stock_qty=stock_qty, sales_qty=sales_qty)
@@ -267,7 +282,8 @@ def export_orders_excel(payload: ExportExcelRequest, db: Session = Depends(get_d
         ws.append([
             article,
             name,
-            category,
+            product_group,
+            price_category,
             stock_qty,
             int(round(qty)) if qty.is_integer() else qty,
             price_val,

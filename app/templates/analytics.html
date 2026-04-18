@@ -83,7 +83,7 @@
     <select id="filterG1"
             class="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-slate-50
                    focus:outline-none focus:ring-2 focus:ring-blue-400 sm:w-44">
-        <option value="">Все группы 1</option>
+        <option value="">Все группы</option>
         {% for g in groups1 %}<option value="{{ g }}">{{ g }}</option>{% endfor %}
     </select>
     <select id="filterG2"
@@ -126,26 +126,29 @@
         </span>
     </div>
     <div class="overflow-x-auto">
-        <table class="w-full text-sm" id="analyticsTable">
+        <table class="w-full min-w-[1140px] table-fixed border-collapse text-sm" id="analyticsTable">
             <thead>
                 <tr class="border-b border-slate-100 text-xs text-slate-400 uppercase tracking-wide">
-                    <th class="px-3 py-3 text-left w-8">
+                    <th class="px-3 py-3 text-left align-middle whitespace-nowrap w-8">
                         <input type="checkbox" id="checkAll" onchange="toggleAll(this)"
                                class="rounded border-slate-300 text-blue-500 focus:ring-blue-400">
                     </th>
-                    <th class="px-3 py-3 text-left cursor-pointer hover:text-slate-600 select-none"
+                    <th class="px-3 py-3 text-left align-middle whitespace-nowrap w-28 cursor-pointer hover:text-slate-600 select-none"
                         onclick="sortTable('article')">Артикул <span>↕</span></th>
-                    <th class="px-3 py-3 text-left cursor-pointer hover:text-slate-600 select-none"
+                    <th class="px-3 py-3 text-left align-middle whitespace-nowrap w-[280px] cursor-pointer hover:text-slate-600 select-none"
                         onclick="sortTable('name')">Наименование <span>↕</span></th>
-                    <th class="px-3 py-3 text-left">Категории</th>
-                    <th class="px-3 py-3 text-right cursor-pointer hover:text-slate-600 select-none"
+                    <th class="px-3 py-3 text-left align-middle whitespace-nowrap w-52 cursor-pointer hover:text-slate-600 select-none"
+                        onclick="sortTable('g1')">Группы <span>↕</span></th>
+                    <th class="px-3 py-3 text-center align-middle whitespace-nowrap w-36 cursor-pointer hover:text-slate-600 select-none"
+                        onclick="sortTable('priceCategory')">Категория <span>↕</span></th>
+                    <th class="px-3 py-3 text-right align-middle whitespace-nowrap w-28 cursor-pointer hover:text-slate-600 select-none"
                         onclick="sortTable('stock')">Остаток <span>↕</span></th>
-                    <th class="px-3 py-3 text-right cursor-pointer hover:text-slate-600 select-none"
+                    <th class="px-3 py-3 text-right align-middle whitespace-nowrap w-24 cursor-pointer hover:text-slate-600 select-none"
                         onclick="sortTable('sales')">Продажи/нед <span>↕</span></th>
-                    <th class="px-3 py-3 text-right">Цена</th>
-                    <th class="px-3 py-3 text-right cursor-pointer hover:text-slate-600 select-none"
+                    <th class="px-3 py-3 text-right align-middle whitespace-nowrap w-24">Цена</th>
+                    <th class="px-3 py-3 text-right align-middle whitespace-nowrap w-24 cursor-pointer hover:text-slate-600 select-none"
                         onclick="sortTable('margin')">Наценка <span>↕</span></th>
-                    <th class="px-3 py-3 w-10"></th>
+                    <th class="px-3 py-3 text-center align-middle whitespace-nowrap w-16"></th>
                 </tr>
             </thead>
             <tbody id="tableBody">
@@ -166,6 +169,7 @@
                 data-g1="{{ r.group1 }}"
                 data-g2="{{ r.group2 }}"
                 data-g3="{{ r.group3 }}"
+                data-price-category="{{ r.price_category }}"
                 data-stock="{{ r.stock_qty }}"
                 data-sales="{{ r.sales_qty }}"
                 data-stock-status="{{ r.stock_status }}"
@@ -186,7 +190,7 @@
                     {{ r.article }}
                 </td>
 
-                <td class="px-3 py-3 max-w-xs">
+                <td class="px-3 py-3">
                     <p class="font-medium text-slate-800 truncate" title="{{ r.name }}">{{ r.name }}</p>
                     <div class="flex flex-wrap gap-1 mt-1">
                         {% if r.is_seasonal %}
@@ -201,9 +205,14 @@
                 </td>
 
                 <td class="px-3 py-3 text-xs text-slate-400 whitespace-nowrap">
-                    {% if r.group1 %}<p class="text-slate-600 font-medium">{{ r.group1 }}</p>{% endif %}
-                    {% if r.group2 %}<p>→ {{ r.group2 }}</p>{% endif %}
-                    {% if r.group3 %}<p>{{ r.group3 }}</p>{% endif %}
+                    {% if r.group1 %}<p class="text-slate-600 font-medium truncate" title="{{ r.group1 }}">{{ r.group1 }}</p>{% endif %}
+                    {% if r.group2 %}<p class="truncate" title="{{ r.group2 }}">→ {{ r.group2 }}</p>{% endif %}
+                    {% if r.group3 %}<p class="truncate" title="{{ r.group3 }}">{{ r.group3 }}</p>{% endif %}
+                    {% if not r.group1 and not r.group2 and not r.group3 %}<p>—</p>{% endif %}
+                </td>
+
+                <td class="px-3 py-3 text-xs text-slate-500 text-center">
+                    <p class="truncate" title="{{ r.price_category or '—' }}">{{ r.price_category or "—" }}</p>
                 </td>
 
                 <td class="px-3 py-3 text-right whitespace-nowrap">
@@ -247,7 +256,7 @@
                 #}
                 <td class="px-3 py-3 text-center">
                     <button onclick="addRowToOrder(this)"
-                            class="w-7 h-7 rounded-lg bg-blue-50 hover:bg-blue-500 text-blue-500
+                            class="mx-auto w-8 h-8 rounded-lg bg-blue-50 hover:bg-blue-500 text-blue-500
                                    hover:text-white transition-colors flex items-center justify-center"
                             title="Добавить в заказ">
                         <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24"
@@ -259,7 +268,7 @@
             </tr>
             {% else %}
             <tr>
-                <td colspan="9" class="px-4 py-10 text-center text-sm text-slate-400">
+                <td colspan="10" class="px-4 py-10 text-center text-sm text-slate-400">
                     Нет данных для отображения
                 </td>
             </tr>
@@ -326,7 +335,11 @@ function applyFilters() {
         const name    = (row.dataset.name    || '').toLowerCase();
         const stockStatus = row.dataset.stockStatus || '';
         const seasonal    = row.dataset.seasonal || '0';
-        const ok = (!search || article.includes(search) || name.includes(search))
+        const g1v = (row.dataset.g1 || '').toLowerCase();
+        const g2v = (row.dataset.g2 || '').toLowerCase();
+        const g3v = (row.dataset.g3 || '').toLowerCase();
+        const priceCategory = (row.dataset.priceCategory || '').toLowerCase();
+        const ok = (!search || article.includes(search) || name.includes(search) || g1v.includes(search) || g2v.includes(search) || g3v.includes(search) || priceCategory.includes(search))
                 && (!g1 || row.dataset.g1 === g1)
                 && (!g2 || row.dataset.g2 === g2)
                 && (!g3 || row.dataset.g3 === g3);
@@ -384,7 +397,7 @@ function sortTable(field) {
 
     const tbody   = document.getElementById('tableBody');
     const rowsArr = Array.from(tbody.querySelectorAll('.table-row'));
-    const keyMap  = { article: 'article', name: 'name', stock: 'stock', sales: 'sales', margin: 'margin' };
+    const keyMap  = { article: 'article', name: 'name', g1: 'g1', priceCategory: 'priceCategory', stock: 'stock', sales: 'sales', margin: 'margin' };
     const attr    = keyMap[field] || field;
 
     rowsArr.sort(function(a, b) {
