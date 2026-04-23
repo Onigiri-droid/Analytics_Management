@@ -19,7 +19,7 @@
     </div>
 
     <div class="flex items-center gap-3">
-        <a href="/analytics/" class="text-sm text-blue-500 hover:underline">
+        <a href="{{ back_url }}" class="text-sm text-blue-500 hover:underline">
             ← К списку
         </a>
     </div>
@@ -79,10 +79,10 @@
             <div class="bg-white border border-slate-200 rounded-2xl p-4">
                 <div class="flex items-start justify-between gap-3">
                     <div>
-                        <p class="text-sm text-slate-500">Продажи / нед</p>
+                        <p class="text-sm text-slate-500">Продажи / нед (нормализовано)</p>
                         <p class="text-2xl font-bold text-slate-800">{{ detail.sales_qty | int }} шт</p>
                         <p class="text-sm mt-1 {% if detail.sales_change_pct >= 0 %}text-emerald-600{% else %}text-rose-500{% endif %}">
-                            {% if detail.sales_change_pct >= 0 %}+{% endif %}{{ detail.sales_change_pct | int }}% к прошлой неделе
+                            {% if detail.sales_change_pct >= 0 %}+{% endif %}{{ detail.sales_change_pct | int }}% к предыдущему отчёту (нед. экв.)
                         </p>
                     </div>
                     <span class="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-50 text-emerald-500">
@@ -152,7 +152,7 @@
         </div>
 
         <div class="bg-white border border-slate-200 rounded-2xl p-4">
-            <h2 class="text-sm font-semibold text-slate-700 mb-2">Сравнение недель</h2>
+            <h2 class="text-sm font-semibold text-slate-700 mb-2">Сравнение отчётов</h2>
             <div class="relative h-64">
                 <canvas id="chartTurnover"></canvas>
             </div>
@@ -180,7 +180,7 @@
 (function () {
     var trend = JSON.parse(document.getElementById('trend-data').textContent || '{}');
     var trendSeries = trend.series || [];
-    var trendLabels = trendSeries.map(function (_, i) { return 'Нед ' + (i + 1); });
+    var trendLabels = trendSeries.map(function (_, i) { return 'Неделя (экв.) ' + (i + 1); });
     var trendValues = trendSeries.map(function (v) { return Number(v) || 0; });
 
     var ctxT = document.getElementById('chartTrend');

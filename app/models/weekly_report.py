@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Date, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import Column, Date, DateTime, Float, ForeignKey, Index, Integer, String
 from sqlalchemy.sql import func
 
 from app.core.database import Base
@@ -15,6 +15,10 @@ class WeeklyReport(Base):
 
 class WeeklyReportItem(Base):
     __tablename__ = "weekly_report_items"
+    __table_args__ = (
+        Index("ix_weekly_report_items_article", "article"),
+        Index("ix_weekly_report_items_report_article", "report_id", "article"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     report_id = Column(Integer, ForeignKey("weekly_reports.id", ondelete="CASCADE"), nullable=False, index=True)

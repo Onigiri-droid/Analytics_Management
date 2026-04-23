@@ -7,12 +7,13 @@ from sqlalchemy import select
 from app.core.database import get_db
 from app.core.templates import templates
 from app.services.weekly_reports import ingest_weekly_report
+from app.services.weekly_reports import infer_report_period_from_filename
 from app.models.weekly_report import WeeklyReport, WeeklyReportItem
 from sqlalchemy import func
 
 router = APIRouter()
 
-ALLOWED_EXTENSION = ".xlsx"
+ALLOWED_EXTENSIONS = (".xlsx", ".xls")
 
 
 def _build_upload_history(db: Session) -> list[dict]:
@@ -32,15 +33,31 @@ def _build_upload_history(db: Session) -> list[dict]:
     ).all()
 
     history = []
-    for i, (report, row_count) in enumerate(rows):
+    for report, row_count in rows:
+        meta = infer_report_period_from_filename(report.filename or "")
+        date_from_filename = meta["report_date"]
+        sort_date = date_from_filename or report.report_date
         history.append({
-            "filename":    report.filename,
-            "uploaded_at": report.upload_date.strftime("%d.%m.%Y %H:%M"),
-            "row_count":   row_count,
-            "status":      "ok",
-            "is_current":  i == 0,
-            "is_previous": i == 1,
+            "filename":     report.filename,
+            "uploaded_at":  report.upload_date.strftime("%d.%m.%Y %H:%M"),
+            "report_date":  sort_date.strftime("%d.%m.%Y") if sort_date else "—",
+            "row_count":    row_count,
+            "period_label": meta["period_label"],
+            "status":       "ok",
+            "_sort_date":   sort_date,
         })
+
+    history.sort(
+        key=lambda x: (
+            x["_sort_date"] is None,
+            x["_sort_date"],
+        ),
+        reverse=True,
+    )
+    for i, item in enumerate(history):
+        item["is_current"] = i == 0
+        item["is_previous"] = i == 1
+        item.pop("_sort_date", None)
     return history
 
 
@@ -58,8 +75,11 @@ async def upload_file(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ):
-    if not file.filename or not file.filename.lower().endswith(ALLOWED_EXTENSION):
-        raise HTTPException(400, detail=f"Ожидается файл {ALLOWED_EXTENSION}")
+    if not file.filename or not file.filename.lower().endswith(ALLOWED_EXTENSIONS):
+        raise HTTPException(
+            400,
+            detail=f"Ожидается файл формата: {', '.join(ALLOWED_EXTENSIONS)}",
+        )
 
     contents = await file.read()
     ingest_weekly_report(filename=file.filename, file_bytes=contents, db=db)

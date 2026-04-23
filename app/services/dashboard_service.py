@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.models.weekly_report import WeeklyReport, WeeklyReportItem
 from app.services.analytics_service import get_avg_turnover   # ← новый импорт
+from app.services.weekly_reports import infer_report_period_from_filename
 
 
 MONTHS_RU = {
@@ -234,6 +235,9 @@ def get_dashboard_data(db: Session) -> dict[str, Any]:
     year  = latest.report_date.year
     title = f"Обзор ключевых показателей за {month} {year}"
 
+    latest_meta = infer_report_period_from_filename(latest.filename or "")
+    previous_meta = infer_report_period_from_filename(previous.filename or "") if previous else None
+
     current_sales  = _get_sales_sum_rub(db, latest.id)
     previous_sales = _get_sales_sum_rub(db, previous.id) if previous else 0.0
     growth_pct     = (
@@ -254,6 +258,9 @@ def get_dashboard_data(db: Session) -> dict[str, Any]:
         "has_data":    True,
         "title":       title,
         "kpi_sales":   {"current": current_sales, "previous": previous_sales, "growth_pct": growth_pct},
+        "kpi_sales_compare_label": "к предыдущему отчёту",
+        "latest_period_label": latest_meta["period_label"],
+        "previous_period_label": previous_meta["period_label"] if previous_meta else None,
         "kpi_stock":   stock_kpi,
         "kpi_turnover": kpi_turnover,     # { "value": "2.3", "status": "Отличный уровень" }
         "weekly_sales": weekly_series,

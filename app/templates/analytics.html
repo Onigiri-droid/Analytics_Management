@@ -33,7 +33,9 @@
                    shadow-sm transition-colors hover:bg-slate-50 hover:shadow cursor-pointer">
         <p class="text-xs text-slate-400 font-medium mb-1">Всего позиций</p>
         <p class="text-2xl font-bold text-slate-800"><span id="kpiTotalValue">{{ kpi.total_sku }}</span></p>
-        <p class="text-xs text-slate-400 mt-0.5">SKU в базе</p>
+        <p class="text-xs text-slate-400 mt-0.5">
+            из {{ kpi.total_all_sku }} в отчёте
+        </p>
     </button>
     <button id="kpiInStock"
             type="button"
@@ -52,7 +54,7 @@
             class="kpi-card bg-white border border-slate-200 rounded-xl px-4 py-3 text-left
                    shadow-sm transition-colors hover:bg-slate-50 hover:shadow cursor-pointer">
         <p class="text-xs text-slate-400 font-medium mb-1">Низкий/Критический</p>
-        <p class="text-2xl font-bold text-amber-500"><span id="kpiLowCriticalValue">{{ kpi.critical_count }}</span></p>
+        <p class="text-2xl font-bold text-amber-500"><span id="kpiLowCriticalValue">{{ kpi.low_critical_count }}</span></p>
         <p class="text-xs text-slate-400 mt-0.5">требуют заказа</p>
     </button>
     <button id="kpiSeasonal"
@@ -77,6 +79,7 @@
                   d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z"/>
         </svg>
         <input id="searchInput" type="text" placeholder="Поиск по коду или названию..."
+               value="{{ filter_q }}"
                class="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg
                       focus:outline-none focus:ring-2 focus:ring-blue-400 bg-slate-50">
     </div>
@@ -84,19 +87,19 @@
             class="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-slate-50
                    focus:outline-none focus:ring-2 focus:ring-blue-400 sm:w-44">
         <option value="">Все группы</option>
-        {% for g in groups1 %}<option value="{{ g }}">{{ g }}</option>{% endfor %}
+        {% for g in groups1 %}<option value="{{ g }}" {% if g == filter_g1 %}selected{% endif %}>{{ g }}</option>{% endfor %}
     </select>
     <select id="filterG2"
             class="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-slate-50
                    focus:outline-none focus:ring-2 focus:ring-blue-400 sm:w-44">
         <option value="">Все группы 2</option>
-        {% for g in groups2 %}<option value="{{ g }}">{{ g }}</option>{% endfor %}
+        {% for g in groups2 %}<option value="{{ g }}" {% if g == filter_g2 %}selected{% endif %}>{{ g }}</option>{% endfor %}
     </select>
     <select id="filterG3"
             class="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-slate-50
                    focus:outline-none focus:ring-2 focus:ring-blue-400 sm:w-44">
         <option value="">Все группы 3</option>
-        {% for g in groups3 %}<option value="{{ g }}">{{ g }}</option>{% endfor %}
+        {% for g in groups3 %}<option value="{{ g }}" {% if g == filter_g3 %}selected{% endif %}>{{ g }}</option>{% endfor %}
     </select>
 </div>
 
@@ -123,6 +126,13 @@
     <div class="px-4 py-3 border-b border-slate-100">
         <span class="text-sm font-semibold text-slate-700">
             Список товаров (<span id="visibleCount">{{ rows|length }}</span>)
+        </span>
+        <span class="text-xs text-slate-400 ml-2">
+            {% if filtered_mode %}
+                отфильтровано из {{ kpi.total_all_sku }} в текущем отчёте
+            {% else %}
+                из {{ kpi.total_all_sku }} в текущем отчёте
+            {% endif %}
         </span>
     </div>
     <div class="overflow-x-auto">
@@ -175,7 +185,8 @@
                 data-stock-status="{{ r.stock_status }}"
                 data-seasonal="{{ 1 if r.is_seasonal else 0 }}"
                 data-margin="{{ r.actual_margin_pct }}"
-                data-price="{{ r.store_price or 0 }}">
+                data-price="{{ r.store_price or 0 }}"
+                data-recommended-qty="{{ r.recommended_order_qty or 0 }}">
 
                 <td class="px-3 py-3">
                     {# data-* на чекбоксе — безопасно, кавычек JS здесь нет #}
@@ -183,7 +194,8 @@
                            onchange="updateBulkBar()"
                            data-article="{{ r.article }}"
                            data-name="{{ r.name }}"
-                           data-price="{{ r.store_price or 0 }}">
+                           data-price="{{ r.store_price or 0 }}"
+                           data-recommended-qty="{{ r.recommended_order_qty or 0 }}">
                 </td>
 
                 <td class="px-3 py-3 font-mono text-xs text-slate-500 whitespace-nowrap">
@@ -278,20 +290,57 @@
     </div>
 </div>
 
+<div class="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+    <p class="text-xs text-slate-500">
+        Страница {{ page }} из {{ total_pages }} · по {{ limit }} товаров
+    </p>
+    <div class="flex items-center gap-1 flex-wrap">
+        {% set qs = "" %}
+        {% if filter_q %}{% set qs = qs ~ "&q=" ~ filter_q|urlencode %}{% endif %}
+        {% if filter_g1 %}{% set qs = qs ~ "&g1=" ~ filter_g1|urlencode %}{% endif %}
+        {% if filter_g2 %}{% set qs = qs ~ "&g2=" ~ filter_g2|urlencode %}{% endif %}
+        {% if filter_g3 %}{% set qs = qs ~ "&g3=" ~ filter_g3|urlencode %}{% endif %}
+        {% if filter_kpi and filter_kpi != "all" %}{% set qs = qs ~ "&kpi=" ~ filter_kpi|urlencode %}{% endif %}
+
+        <a href="/analytics/?page=1&limit={{ limit }}{{ qs }}"
+           class="px-2.5 py-1.5 text-xs rounded border {% if page == 1 %}pointer-events-none text-slate-300 border-slate-200{% else %}text-slate-600 border-slate-300 hover:bg-slate-50{% endif %}">
+            « Первая
+        </a>
+        <a href="/analytics/?page={{ page - 1 }}&limit={{ limit }}{{ qs }}"
+           class="px-2.5 py-1.5 text-xs rounded border {% if page <= 1 %}pointer-events-none text-slate-300 border-slate-200{% else %}text-slate-600 border-slate-300 hover:bg-slate-50{% endif %}">
+            ‹ Назад
+        </a>
+
+        {% for p in range(page_start, page_end + 1) %}
+        <a href="/analytics/?page={{ p }}&limit={{ limit }}{{ qs }}"
+           class="px-3 py-1.5 text-xs rounded border {% if p == page %}bg-blue-500 text-white border-blue-500{% else %}text-slate-600 border-slate-300 hover:bg-slate-50{% endif %}">
+            {{ p }}
+        </a>
+        {% endfor %}
+
+        <a href="/analytics/?page={{ page + 1 }}&limit={{ limit }}{{ qs }}"
+           class="px-2.5 py-1.5 text-xs rounded border {% if page >= total_pages %}pointer-events-none text-slate-300 border-slate-200{% else %}text-slate-600 border-slate-300 hover:bg-slate-50{% endif %}">
+            Вперёд ›
+        </a>
+        <a href="/analytics/?page={{ total_pages }}&limit={{ limit }}{{ qs }}"
+           class="px-2.5 py-1.5 text-xs rounded border {% if page >= total_pages %}pointer-events-none text-slate-300 border-slate-200{% else %}text-slate-600 border-slate-300 hover:bg-slate-50{% endif %}">
+            Последняя »
+        </a>
+    </div>
+</div>
+
 {% endif %}
 {% endblock %}
 
 
 {% block extra_scripts %}
 <script>
-// ── Фильтрация ────────────────────────────────────────────────────────────
 // Переименовано в tableRows — иначе конфликт с Jinja-переменной rows
-const tableRows   = document.querySelectorAll('.table-row');
+const tableRows    = document.querySelectorAll('.table-row');
 const visibleCount = document.getElementById('visibleCount');
 
-// KPI-карточки сверху — дополнительные фильтры таблицы.
-// all | in_stock | low_critical | seasonal
-var kpiFilter = 'all';
+// KPI фильтр хранится в URL и применяется на сервере
+var kpiFilter = '{{ filter_kpi or "all" }}';
 
 function applyKpiActive() {
     var cards = [
@@ -315,77 +364,51 @@ function applyKpiActive() {
 function setKpiFilter(next) {
     kpiFilter = (kpiFilter === next) ? 'all' : next;
     applyKpiActive();
-    applyFilters();
+    setUrlParam('kpi', kpiFilter === 'all' ? '' : kpiFilter);
+    setUrlParam('page', '1');
+    navigateWithParams();
 }
 
-function applyFilters() {
-    const search = (document.getElementById('searchInput').value || '').toLowerCase();
-    const g1     = document.getElementById('filterG1').value;
-    const g2     = document.getElementById('filterG2').value;
-    const g3     = document.getElementById('filterG3').value;
-
-    var countAll = 0;
-    var countInStock = 0;
-    var countLowCritical = 0;
-    var countSeasonal = 0;
-
-    let visible = 0;
-    tableRows.forEach(function(row) {
-        const article = (row.dataset.article || '').toLowerCase();
-        const name    = (row.dataset.name    || '').toLowerCase();
-        const stockStatus = row.dataset.stockStatus || '';
-        const seasonal    = row.dataset.seasonal || '0';
-        const g1v = (row.dataset.g1 || '').toLowerCase();
-        const g2v = (row.dataset.g2 || '').toLowerCase();
-        const g3v = (row.dataset.g3 || '').toLowerCase();
-        const priceCategory = (row.dataset.priceCategory || '').toLowerCase();
-        const ok = (!search || article.includes(search) || name.includes(search) || g1v.includes(search) || g2v.includes(search) || g3v.includes(search) || priceCategory.includes(search))
-                && (!g1 || row.dataset.g1 === g1)
-                && (!g2 || row.dataset.g2 === g2)
-                && (!g3 || row.dataset.g3 === g3);
-
-        // KPI цифры должны соответствовать текущему контексту (поиск + группы),
-        // но НЕ зависят от выбранной плашки сверху.
-        if (ok) {
-            countAll++;
-            // "В наличии" в UI = достаточный запас (ок), а не просто ненулевой остаток.
-            if (stockStatus === 'ok') countInStock++;
-            if (stockStatus === 'low' || stockStatus === 'critical') countLowCritical++;
-            if (seasonal === '1') countSeasonal++;
-        }
-
-        let okKpi = true;
-        if (kpiFilter === 'in_stock') {
-            okKpi = stockStatus === 'ok';
-        } else if (kpiFilter === 'low_critical') {
-            okKpi = stockStatus === 'low' || stockStatus === 'critical';
-        } else if (kpiFilter === 'seasonal') {
-            okKpi = seasonal === '1';
-        }
-
-        const visibleRow = ok && okKpi;
-        row.style.display = visibleRow ? '' : 'none';
-        if (visibleRow) visible++;
-    });
-    if (visibleCount) visibleCount.textContent = visible;
-
-    var elTotal = document.getElementById('kpiTotalValue');
-    var elInStock = document.getElementById('kpiInStockValue');
-    var elLowCritical = document.getElementById('kpiLowCriticalValue');
-    var elSeasonal = document.getElementById('kpiSeasonalValue');
-    if (elTotal) elTotal.textContent = countAll;
-    if (elInStock) elInStock.textContent = countInStock;
-    if (elLowCritical) elLowCritical.textContent = countLowCritical;
-    if (elSeasonal) elSeasonal.textContent = countSeasonal;
+function setUrlParam(key, value) {
+    var url = new URL(window.location.href);
+    if (!value) url.searchParams.delete(key);
+    else url.searchParams.set(key, value);
+    window.history.replaceState({}, '', url.toString());
 }
 
-document.getElementById('searchInput').addEventListener('input',  applyFilters);
-document.getElementById('filterG1').addEventListener('change', applyFilters);
-document.getElementById('filterG2').addEventListener('change', applyFilters);
-document.getElementById('filterG3').addEventListener('change', applyFilters);
+function navigateWithParams() {
+    window.location.href = window.location.pathname + window.location.search;
+}
+
+var searchTimer = null;
+document.getElementById('searchInput').addEventListener('input', function (e) {
+    var value = (e.target && e.target.value) ? e.target.value : '';
+    if (searchTimer) clearTimeout(searchTimer);
+    searchTimer = setTimeout(function () {
+        setUrlParam('q', value.trim());
+        setUrlParam('page', '1');
+        navigateWithParams();
+    }, 250);
+});
+
+document.getElementById('filterG1').addEventListener('change', function (e) {
+    setUrlParam('g1', (e.target && e.target.value) ? e.target.value : '');
+    setUrlParam('page', '1');
+    navigateWithParams();
+});
+document.getElementById('filterG2').addEventListener('change', function (e) {
+    setUrlParam('g2', (e.target && e.target.value) ? e.target.value : '');
+    setUrlParam('page', '1');
+    navigateWithParams();
+});
+document.getElementById('filterG3').addEventListener('change', function (e) {
+    setUrlParam('g3', (e.target && e.target.value) ? e.target.value : '');
+    setUrlParam('page', '1');
+    navigateWithParams();
+});
 
 applyKpiActive();
-applyFilters();
+if (visibleCount) visibleCount.textContent = tableRows.length;
 
 
 // ── Сортировка ────────────────────────────────────────────────────────────
@@ -441,24 +464,28 @@ function addRowToOrder(btn) {
     var article = tr.dataset.article || '';
     var name    = tr.dataset.name    || '';
     var price   = parseFloat(tr.dataset.price) || null;
-    postOrder(article, name, 1, price).then(function(ok) {
-        if (ok) showToast((name || article) + ' добавлен в заказ', 'success');
+    var recommendedQty = parseInt(tr.dataset.recommendedQty, 10);
+    if (!recommendedQty || recommendedQty < 1) recommendedQty = 1;
+
+    postOrder(article, name, recommendedQty, price).then(function(ok) {
+        if (ok) showToast((name || article) + ' добавлен в заказ: ' + recommendedQty + ' шт', 'success');
     });
 }
 
 function addSelectedToOrder() {
     var checked = document.querySelectorAll('.row-check:checked');
-    var promises = [];
+    var bulkItems = [];
     checked.forEach(function(cb) {
-        promises.push(postOrder(
-            cb.dataset.article || '',
-            cb.dataset.name    || '',
-            1,
-            parseFloat(cb.dataset.price) || null
-        ));
+        var recommendedQty = parseInt(cb.dataset.recommendedQty, 10);
+        if (!recommendedQty || recommendedQty < 1) recommendedQty = 1;
+        bulkItems.push({
+            article: cb.dataset.article || '',
+            name: cb.dataset.name || '',
+            qty: recommendedQty,
+            store_price: parseFloat(cb.dataset.price) || null
+        });
     });
-    Promise.all(promises).then(function(results) {
-        var count = results.filter(Boolean).length;
+    postOrderBulk(bulkItems).then(function(count) {
         clearSelection();
         if (count) showToast('Добавлено ' + count + ' позиций в заказ', 'success');
     });
@@ -470,6 +497,22 @@ function postOrder(article, name, qty, price) {
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ article: article, name: name, qty: qty, store_price: price }),
     }).then(function(r) { return r.ok; }).catch(function() { return false; });
+}
+
+function postOrderBulk(items) {
+    if (!items || !items.length) return Promise.resolve(0);
+    return fetch('/orders/add-bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: items })
+    })
+    .then(function(r) {
+        if (!r.ok) return 0;
+        return r.json().then(function(data) {
+            return parseInt((data && data.added_count) || 0, 10) || 0;
+        }).catch(function() { return 0; });
+    })
+    .catch(function() { return 0; });
 }
 
 // ── Переход в карточку аналитики товара ─────────────────────────────────
@@ -486,7 +529,8 @@ tableRows.forEach(function (row) {
         var article = row.dataset.article || '';
         if (!article) return;
 
-        window.location.href = '/analytics/item/' + encodeURIComponent(article);
+        var returnTo = window.location.pathname + window.location.search + window.location.hash;
+        window.location.href = '/analytics/item/' + encodeURIComponent(article) + '?return_to=' + encodeURIComponent(returnTo);
     });
 });
 </script>

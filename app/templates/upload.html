@@ -91,7 +91,10 @@
                 {% endif %}
             </div>
             <p class="text-xs text-slate-400 mt-0.5">
-                {{ f.uploaded_at }} · {{ f.row_count }} позиций
+                Дата отчёта: {{ f.report_date }} · {{ f.period_label }} · {{ f.row_count }} позиций
+            </p>
+            <p class="text-xs text-slate-300 mt-0.5">
+                Загружен: {{ f.uploaded_at }}
             </p>
         </div>
 

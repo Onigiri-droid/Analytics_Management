@@ -6,9 +6,11 @@ from sqlalchemy.orm import Session
 from app.core.auth import LoginRequired, get_current_user
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.database import SessionLocal
 from app.core.templates import templates
 from app.routers import api_router
 from app.services.dashboard_service import get_dashboard_data
+from app.services.weekly_reports import repair_report_dates_from_filenames
 
 app = FastAPI(title="Inventory and Procurement Management")
 app.add_middleware(
@@ -20,6 +22,15 @@ app.add_middleware(
 )
 
 app.include_router(api_router)
+
+
+@app.on_event("startup")
+async def repair_reports_on_startup():
+    db = SessionLocal()
+    try:
+        repair_report_dates_from_filenames(db)
+    finally:
+        db.close()
 
 
 @app.exception_handler(LoginRequired)

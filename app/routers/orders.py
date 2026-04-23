@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import desc, select
+from sqlalchemy import delete, desc, select
 from sqlalchemy.orm import Session
 
 from openpyxl import Workbook
@@ -12,6 +12,7 @@ from app.core.database import get_db
 from app.core.templates import templates
 from app.models.order import OrderItem          # ← модель теперь в models/
 from app.models.weekly_report import WeeklyReport, WeeklyReportItem
+from app.services.stock_metrics import compute_stock_status
 
 
 router = APIRouter()
@@ -22,6 +23,10 @@ class AddOrderItem(BaseModel):
     name:        str = ""
     qty:         float = 0.0
     store_price: float | None = None
+
+
+class AddBulkOrderRequest(BaseModel):
+    items: list[AddOrderItem] = []
 
 
 class RemoveOrderItem(BaseModel):
@@ -81,19 +86,6 @@ def orders_page(request: Request, db: Session = Depends(get_db)):
                 "sales_qty": float(sales_qty or 0),
             }
 
-    def compute_stock_status(stock_qty: float, sales_qty: float) -> str:
-        # Совпадает с логикой на странице остатков.
-        if sales_qty > 0 and stock_qty > 0:
-            ratio = stock_qty / sales_qty
-            if ratio < 1:
-                return "critical"
-            if ratio < 2:
-                return "low"
-            return "ok"
-        if stock_qty == 0:
-            return "empty"
-        return "ok"
-
     for i in items:
         article = str(i.article)
         latest = latest_items_by_article.get(article, {})
@@ -150,24 +142,81 @@ def orders_page(request: Request, db: Session = Depends(get_db)):
 
 @router.post("/add")
 def add_to_order(payload: AddOrderItem, db: Session = Depends(get_db)):
+    qty_to_add = float(payload.qty or 0)
+    if qty_to_add <= 0:
+        qty_to_add = 1.0
+
     existing = db.execute(
         select(OrderItem).where(OrderItem.article == payload.article)
     ).scalar_one_or_none()
 
     if existing:
-        existing.qty += payload.qty if payload.qty > 0 else 0
+        existing.qty += qty_to_add
         if payload.store_price is not None:
             existing.store_price = payload.store_price
     else:
         db.add(OrderItem(
             article=payload.article,
             name=payload.name,
-            qty=payload.qty,
+            qty=qty_to_add,
             store_price=payload.store_price,
         ))
 
     db.commit()
     return JSONResponse({"status": "ok", "article": payload.article})
+
+
+@router.post("/add-bulk")
+def add_bulk_to_order(payload: AddBulkOrderRequest, db: Session = Depends(get_db)):
+    if not payload.items:
+        return JSONResponse({"status": "ok", "added_count": 0})
+
+    normalized: list[AddOrderItem] = []
+    for item in payload.items:
+        article = (item.article or "").strip()
+        if not article:
+            continue
+        qty = float(item.qty or 0)
+        if qty <= 0:
+            qty = 1.0
+        normalized.append(
+            AddOrderItem(
+                article=article,
+                name=item.name or "",
+                qty=qty,
+                store_price=item.store_price,
+            )
+        )
+
+    if not normalized:
+        return JSONResponse({"status": "ok", "added_count": 0})
+
+    articles = [item.article for item in normalized]
+    existing_rows = db.execute(
+        select(OrderItem).where(OrderItem.article.in_(articles))
+    ).scalars().all()
+    existing_by_article = {str(row.article): row for row in existing_rows}
+
+    for item in normalized:
+        existing = existing_by_article.get(item.article)
+        if existing:
+            existing.qty += float(item.qty or 0)
+            if item.store_price is not None:
+                existing.store_price = item.store_price
+            if item.name and not existing.name:
+                existing.name = item.name
+            continue
+        db.add(
+            OrderItem(
+                article=item.article,
+                name=item.name,
+                qty=float(item.qty or 0),
+                store_price=item.store_price,
+            )
+        )
+
+    db.commit()
+    return JSONResponse({"status": "ok", "added_count": len(normalized)})
 
 
 @router.post("/remove")
@@ -183,8 +232,7 @@ def remove_from_order(payload: RemoveOrderItem, db: Session = Depends(get_db)):
 
 @router.post("/clear")
 def clear_order(db: Session = Depends(get_db)):
-    for item in db.execute(select(OrderItem)).scalars().all():
-        db.delete(item)
+    db.execute(delete(OrderItem))
     db.commit()
     return JSONResponse({"status": "ok"})
 
@@ -213,18 +261,6 @@ def export_orders_excel(payload: ExportExcelRequest, db: Session = Depends(get_d
         )
 
     articles = [str(i.article) for i in items if i.article]
-
-    def compute_stock_status(stock_qty: float, sales_qty: float) -> str:
-        if sales_qty > 0 and stock_qty > 0:
-            ratio = stock_qty / sales_qty
-            if ratio < 1:
-                return "critical"
-            if ratio < 2:
-                return "low"
-            return "ok"
-        if stock_qty == 0:
-            return "empty"
-        return "ok"
 
     latest_report = db.execute(
         select(WeeklyReport).order_by(desc(WeeklyReport.report_date)).limit(1)
@@ -270,8 +306,6 @@ def export_orders_excel(payload: ExportExcelRequest, db: Session = Depends(get_d
         product_group = latest.get("product_group") or ""
         price_category = latest.get("price_category") or ""
         stock_qty = float(latest.get("stock_qty") or 0)
-        sales_qty = float(latest.get("sales_qty") or 0)
-        stock_status = compute_stock_status(stock_qty=stock_qty, sales_qty=sales_qty)
 
         qty = float(i.qty or 0)
         store_price = float(i.store_price or 0) if i.store_price is not None else None

@@ -496,7 +496,17 @@
 
     window.clearAll = function() {
         fetch('/orders/clear', { method: 'POST' })
-            .then(function() { location.reload(); });
+            .then(function(res) {
+                if (!res.ok) throw new Error('Clear failed');
+                var tbody = document.getElementById('orderTableBody');
+                if (tbody) tbody.innerHTML = '';
+                rows = [];
+                if (checkAll) checkAll.checked = false;
+                applyFilters();
+            })
+            .catch(function() {
+                alert('Ошибка очистки заказа');
+            });
     };
 
     window.exportExcel = function() {
