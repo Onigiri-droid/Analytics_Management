@@ -172,6 +172,14 @@ def _to_db_value(value: Any) -> Any:
     return value
 
 
+def _normalize_article_value(value: Any) -> str | None:
+    raw = _to_db_value(value)
+    if raw is None:
+        return None
+    normalized = str(raw).strip()
+    return normalized or None
+
+
 def _infer_report_year_from_dataframe(df: pd.DataFrame) -> int | None:
     years: list[int] = []
     for col in ("Дата ввоза", "Действие цен (до...)"):
@@ -226,7 +234,7 @@ def ingest_weekly_report(*, filename: str, file_bytes: bytes, db: Session) -> di
 
         item = WeeklyReportItem(
             report_id=report.id,
-            article=_to_db_value(row["Артикул"]),
+            article=_normalize_article_value(row["Артикул"]),
             name=_to_db_value(row["Номенклатура"]),
             group1=_to_db_value(row["Группа1"]),
             group2=_to_db_value(row["Группа2"]),

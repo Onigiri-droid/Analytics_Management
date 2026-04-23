@@ -1,18 +1,20 @@
 # app/services/analytics_service.py
 from __future__ import annotations
 
+import calendar
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, timedelta
 import math
 from typing import Any, Iterable
 
-from sqlalchemy import desc, func, select
+from sqlalchemy import String, cast, desc, func, select
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
 from app.models.weekly_report import WeeklyReport, WeeklyReportItem
 from app.services.stock_metrics import compute_stock_status
+from app.services.weekly_reports import infer_report_period_from_filename
 
 
 @dataclass(frozen=True)
@@ -83,6 +85,136 @@ def _load_history_for_articles(
     return out
 
 
+def _format_week_label(start_date: date, end_date: date) -> str:
+    months_short = {
+        1: "янв", 2: "фев", 3: "мар", 4: "апр",
+        5: "май", 6: "июн", 7: "июл", 8: "авг",
+        9: "сен", 10: "окт", 11: "ноя", 12: "дек",
+    }
+    return f"{start_date.day}–{end_date.day} {months_short.get(end_date.month, str(end_date.month))}"
+
+
+def _build_weekly_sales_points_for_article(
+    db: Session, *, article: str
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    rows = db.execute(
+        select(
+            WeeklyReport.report_date,
+            WeeklyReport.filename,
+            WeeklyReportItem.sales_qty,
+        )
+        .join(WeeklyReportItem, WeeklyReport.id == WeeklyReportItem.report_id)
+        .where(WeeklyReportItem.article == article)
+        .order_by(WeeklyReport.report_date.asc())
+    ).all()
+
+    if not rows:
+        return [], {"selected_month_key": None, "selected_month_title": None}
+
+    weekly_points: list[dict[str, Any]] = []
+    monthly_rows: list[tuple[date, str, float, int]] = []
+    months_with_real_weeks: set[tuple[int, int]] = set()
+
+    for report_date, filename, sales_qty in rows:
+        meta = infer_report_period_from_filename(filename or "")
+        period_days = int(meta.get("period_days") or 7)
+        sales = _to_float(sales_qty)
+        source_date = report_date
+
+        # В БД sales_qty уже недельный эквивалент. Восстанавливаем продажи
+        # исходного периода, чтобы корректно сравнивать daily между периодами.
+        raw_period_sales = sales * (period_days / 7.0)
+
+        if period_days <= 10:
+            date_to = source_date
+            date_from = date_to - timedelta(days=max(1, period_days) - 1)
+            mid_date = date_from + (date_to - date_from) / 2
+            weekly_points.append(
+                {
+                    "date_from": date_from.isoformat(),
+                    "date_to": date_to.isoformat(),
+                    "mid_date": mid_date.isoformat(),
+                    "label": _format_week_label(date_from, date_to),
+                    "sales_qty": round(float(raw_period_sales), 4),
+                    "period_days": int(period_days),
+                    "estimated": False,
+                    "source_period_days": int(period_days),
+                    "source_report_date": source_date.isoformat(),
+                }
+            )
+            months_with_real_weeks.add((source_date.year, source_date.month))
+        elif period_days >= 27:
+            monthly_rows.append((source_date, filename or "", raw_period_sales, period_days))
+
+    for source_date, _, sales, period_days in monthly_rows:
+        month_key = (source_date.year, source_date.month)
+        if month_key in months_with_real_weeks:
+            continue
+
+        days_in_month = calendar.monthrange(source_date.year, source_date.month)[1]
+        month_days = max(1, days_in_month)
+        chunks = [(1, 7), (8, 14), (15, 21), (22, month_days)]
+        for start_day, end_day in chunks:
+            if start_day > month_days:
+                continue
+            real_end = min(end_day, month_days)
+            span_days = (real_end - start_day) + 1
+            if span_days <= 0:
+                continue
+            date_from = date(source_date.year, source_date.month, start_day)
+            date_to = date(source_date.year, source_date.month, real_end)
+            mid_date = date_from + (date_to - date_from) / 2
+            part_sales = sales * (span_days / month_days)
+            weekly_points.append(
+                {
+                    "date_from": date_from.isoformat(),
+                    "date_to": date_to.isoformat(),
+                    "mid_date": mid_date.isoformat(),
+                    "label": _format_week_label(date_from, date_to),
+                    "sales_qty": round(float(part_sales), 4),
+                    "period_days": int(span_days),
+                    "estimated": True,
+                    "source_period_days": int(period_days),
+                    "source_report_date": source_date.isoformat(),
+                    "estimated_note": "Расчётная оценка на основе месячного отчёта",
+                }
+            )
+
+    weekly_points.sort(key=lambda x: (x["mid_date"], x["date_from"]))
+    last_12 = weekly_points[-12:]
+
+    by_month: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for p in weekly_points:
+        d_from = date.fromisoformat(p["date_from"])
+        key = f"{d_from.year:04d}-{d_from.month:02d}"
+        by_month[key].append(p)
+    for key in list(by_month.keys()):
+        by_month[key].sort(key=lambda x: (x["mid_date"], x["date_from"]))
+
+    selected_month_key = None
+    selected_month_title = None
+    if last_12:
+        last_point_date = date.fromisoformat(last_12[-1]["date_from"])
+        candidate_keys = [
+            k for k in by_month.keys() if k.endswith(f"-{last_point_date.month:02d}")
+        ]
+        if candidate_keys:
+            selected_month_key = sorted(candidate_keys)[-1]
+            y, m = selected_month_key.split("-")
+            month_names = {
+                1: "Январь", 2: "Февраль", 3: "Март", 4: "Апрель",
+                5: "Май", 6: "Июнь", 7: "Июль", 8: "Август",
+                9: "Сентябрь", 10: "Октябрь", 11: "Ноябрь", 12: "Декабрь",
+            }
+            selected_month_title = f"{month_names.get(int(m), m)} {y}"
+
+    return last_12, {
+        "weeks_by_month": dict(by_month),
+        "selected_month_key": selected_month_key,
+        "selected_month_title": selected_month_title,
+    }
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Существующие API-методы (не трогаем)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -150,40 +282,67 @@ def get_seasonality(db: Session, *, article: str) -> dict[str, Any]:
 
 def get_trend(db: Session, *, article: str, weeks: int = 4) -> dict[str, Any]:
     normalized_article = _normalize_article(article)
-    history = _load_history_for_articles(db, articles=[normalized_article]).get(
-        normalized_article, []
-    )
-    # История загружается в порядке "сначала новые", для графика и расчета тренда
-    # приводим к естественной хронологии: слева старые -> справа новые.
-    points_desc = history[: max(2, int(weeks))]
-    points = list(reversed(points_desc))
-    sales = [p.sales_qty for p in points]
+    weekly_points, extra = _build_weekly_sales_points_for_article(db, article=normalized_article)
+    sales = [float(p.get("sales_qty") or 0.0) for p in weekly_points]
 
-    if len(sales) < 2:
+    if len(weekly_points) < 2:
         return {
             "article": normalized_article,
             "trend": "flat",
             "pct_change": 0.0,
             "series": sales,
+            "weekly_points": weekly_points,
+            "weeks_by_month": extra.get("weeks_by_month", {}),
+            "selected_month": None,
+            "selected_month_title": extra.get("selected_month_title"),
+            "is_approx": False,
+            "has_gap_warning": False,
+            "comparison_note": None,
         }
 
-    mid = len(sales) // 2
-    prev = sales[:mid]
-    last = sales[mid:]
-    prev_avg = sum(prev) / len(prev) if prev else 0.0
-    last_avg = sum(last) / len(last) if last else 0.0
+    prev_point = weekly_points[-2]
+    last_point = weekly_points[-1]
+    prev_sales = float(prev_point.get("sales_qty") or 0.0)
+    last_sales = float(last_point.get("sales_qty") or 0.0)
+    prev_days = max(1, int(prev_point.get("period_days") or 7))
+    last_days = max(1, int(last_point.get("period_days") or 7))
+    prev_daily = prev_sales / prev_days
+    last_daily = last_sales / last_days
+
     pct = (
-        ((last_avg - prev_avg) / prev_avg * 100.0)
-        if prev_avg > 0
-        else (100.0 if last_avg > 0 else 0.0)
+        ((last_daily - prev_daily) / prev_daily * 100.0)
+        if prev_daily > 0
+        else (100.0 if last_daily > 0 else 0.0)
     )
     trend = "up" if pct > 5 else "down" if pct < -5 else "flat"
+    prev_mid = date.fromisoformat(prev_point["mid_date"])
+    last_mid = date.fromisoformat(last_point["mid_date"])
+    gap_days = (last_mid - prev_mid).days
+    has_gap_warning = gap_days > 45
+    is_approx = bool(prev_point.get("estimated") or last_point.get("estimated"))
+    if prev_days != last_days:
+        is_approx = True
+
+    comparison_note = None
+    if is_approx:
+        comparison_note = "Приблизительное сравнение: один из периодов рассчитан на основе месячного отчёта"
+    if has_gap_warning:
+        comparison_note = "Разрыв в данных"
 
     return {
         "article": normalized_article,
         "trend": trend,
         "pct_change": round(float(pct), 2),
         "series": sales,
+        "weekly_points": weekly_points,
+        "weeks_by_month": extra.get("weeks_by_month", {}),
+        "selected_month": (date.fromisoformat(extra["selected_month_key"] + "-01").month - 1)
+        if extra.get("selected_month_key")
+        else None,
+        "selected_month_title": extra.get("selected_month_title"),
+        "is_approx": is_approx,
+        "has_gap_warning": has_gap_warning,
+        "comparison_note": comparison_note,
     }
 
 
@@ -411,9 +570,10 @@ def build_analytics_table(
                 prev_sales_map[_normalize_article(art)] = _to_float(sq)
 
     # ── Добавляем пропавшие товары из недавней истории ───────────────────
-    # Если товар раньше продавался, но отсутствует в текущем отчёте,
-    # показываем его как позицию с нулевым остатком (не теряем сезонные SKU).
+    # Если товар отсутствует в текущем отчёте, показываем последнюю известную
+    # запись из истории и отмечаем как "нет данных в последнем отчёте".
     missing_rows: list[tuple] = []
+    missing_articles_set: set[str] = set()
     missing_budget = max(0, limit - len(items)) if offset == 0 else 0
     allow_missing = (not has_any_filter) and (offset == 0) and (missing_budget > 0)
     if allow_missing:
@@ -461,6 +621,9 @@ def build_analytics_table(
         for row in latest_known_by_article.values():
             if len(missing_rows) >= missing_budget:
                 break
+            art = _normalize_article(row[0])
+            if art:
+                missing_articles_set.add(art)
             missing_rows.append(
                 (
                     row[0],
@@ -469,7 +632,7 @@ def build_analytics_table(
                     row[3],
                     row[4],
                     row[5],
-                    0.0,
+                    row[6],
                     row[7],
                     row[8],
                     row[9],
@@ -511,6 +674,15 @@ def build_analytics_table(
     # ── KPI (с учётом server-side фильтров групп/поиска) ─────────────────
     total_all_sku = db.execute(
         select(func.count()).where(WeeklyReportItem.report_id == latest.id)
+    ).scalar_one()
+    normalized_article_expr = func.nullif(
+        func.upper(func.btrim(cast(WeeklyReportItem.article, String))),
+        "",
+    )
+    total_known_sku = db.execute(
+        select(func.count(func.distinct(normalized_article_expr))).where(
+            WeeklyReportItem.article.is_not(None),
+        )
     ).scalar_one()
 
     kpi_base = select(func.count()).where(WeeklyReportItem.report_id == latest.id)
@@ -650,6 +822,7 @@ def build_analytics_table(
                 "is_seasonal": is_seasonal,
                 "trend": trend,
                 "trend_pct": round(float(pct), 2),
+                "no_latest_data": art in missing_articles_set,
             }
         )
 
@@ -659,6 +832,7 @@ def build_analytics_table(
         "kpi": {
             "total_sku": int(total_sku),
             "total_all_sku": int(total_all_sku),
+            "total_known_sku": int(total_known_sku),
             "in_stock": int(in_stock),
             "low_critical_count": int(low_critical),
             "critical_count": int(critical),
@@ -793,11 +967,22 @@ def get_product_detail(
         _to_float(turnover_prev.get("sales_qty")) if turnover_prev else 0.0
     )
 
+    latest_meta = infer_report_period_from_filename(latest.filename or "")
+    latest_days = max(1, int(latest_meta.get("period_days") or 7))
+    prev_days = 7
+    if previous:
+        prev_meta = infer_report_period_from_filename(previous.filename or "")
+        prev_days = max(1, int(prev_meta.get("period_days") or 7))
+
+    current_daily_sales = sales_qty / latest_days
+    prev_daily_sales = (prev_sales_qty / prev_days) if prev_sales_qty > 0 else 0.0
     sales_change_pct = 0.0
-    if prev_sales_qty > 0:
-        sales_change_pct = ((sales_qty - prev_sales_qty) / prev_sales_qty) * 100.0
+    if prev_daily_sales > 0:
+        sales_change_pct = ((current_daily_sales - prev_daily_sales) / prev_daily_sales) * 100.0
     else:
-        sales_change_pct = 100.0 if sales_qty > 0 else 0.0
+        sales_change_pct = 100.0 if current_daily_sales > 0 else 0.0
+    sales_change_is_approx = bool(previous and latest_days != prev_days)
+    sales_change_gap_warning = bool(previous and (latest.report_date - previous.report_date).days > 45)
 
     stock_change_qty = stock_qty - prev_stock_qty
 
@@ -832,6 +1017,8 @@ def get_product_detail(
         "prev_sales_qty": prev_sales_qty,
         "prev_stock_qty": prev_stock_qty,
         "sales_change_pct": round(float(sales_change_pct), 2),
+        "sales_change_is_approx": sales_change_is_approx,
+        "sales_change_gap_warning": sales_change_gap_warning,
         "stock_change_qty": round(float(stock_change_qty), 0),
         # Отдельные метрики для блоков/графиков
         "weeks_without_sales": int(weeks_wo.get("weeks_without_sales") or 0),

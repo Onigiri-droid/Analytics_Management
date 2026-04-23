@@ -51,6 +51,7 @@ def _get_weekly_sales_series(db: Session, limit: int = 8) -> list[dict[str, Any]
     rows = db.execute(
         select(
             WeeklyReport.report_date,
+            WeeklyReport.filename,
             func.coalesce(func.sum(WeeklyReportItem.sales_qty), 0.0).label("sales_qty"),
         )
         .join(WeeklyReportItem, WeeklyReport.id == WeeklyReportItem.report_id)
@@ -59,10 +60,22 @@ def _get_weekly_sales_series(db: Session, limit: int = 8) -> list[dict[str, Any]
         .limit(limit)
     ).all()
 
-    series = [
-        {"report_date": rdate.isoformat() if rdate else None, "sales_qty": float(sales or 0.0)}
-        for rdate, sales in rows
-    ]
+    series = []
+    for rdate, filename, sales in rows:
+        meta = infer_report_period_from_filename(filename or "")
+        period_days = max(1, int(meta.get("period_days") or 7))
+        # В БД sales_qty уже приведён к недельному эквиваленту на этапе загрузки.
+        # Восстанавливаем "сырые" продажи периода и считаем среднедневные:
+        # raw_sales = weekly_equiv * period_days / 7
+        weekly_equiv_sales = float(sales or 0.0)
+        raw_sales = weekly_equiv_sales * (period_days / 7.0)
+        daily_avg = raw_sales / period_days
+        series.append(
+            {
+                "report_date": rdate.isoformat() if rdate else None,
+                "sales_qty": round(float(daily_avg), 4),
+            }
+        )
     return list(reversed(series))
 
 
@@ -240,9 +253,23 @@ def get_dashboard_data(db: Session) -> dict[str, Any]:
 
     current_sales  = _get_sales_sum_rub(db, latest.id)
     previous_sales = _get_sales_sum_rub(db, previous.id) if previous else 0.0
+    latest_days = max(1, int(latest_meta.get("period_days") or 7))
+    previous_days = max(1, int(previous_meta.get("period_days") or 7)) if previous_meta else 7
+
+    # current_sales/previous_sales здесь также в недельном эквиваленте.
+    # Восстанавливаем "сырые" продажи периода, затем daily.
+    current_raw_sales = current_sales * (latest_days / 7.0)
+    previous_raw_sales = previous_sales * (previous_days / 7.0) if previous else 0.0
+    current_daily = current_raw_sales / latest_days
+    previous_daily = (previous_raw_sales / previous_days) if previous and previous_raw_sales > 0 else 0.0
     growth_pct     = (
-        (current_sales - previous_sales) / previous_sales * 100.0
-        if previous_sales > 0 else None
+        (current_daily - previous_daily) / previous_daily * 100.0
+        if previous_daily > 0
+        else None
+    )
+    is_approx_compare = bool(previous and latest_days != previous_days)
+    has_gap_warning = bool(
+        previous and (latest.report_date - previous.report_date).days > 45
     )
 
     stock_kpi   = _get_stock_kpi(db, latest.id)
@@ -257,7 +284,16 @@ def get_dashboard_data(db: Session) -> dict[str, Any]:
     return {
         "has_data":    True,
         "title":       title,
-        "kpi_sales":   {"current": current_sales, "previous": previous_sales, "growth_pct": growth_pct},
+        "kpi_sales":   {
+            "current": current_sales,
+            "previous": previous_sales,
+            "growth_pct": growth_pct,
+            "is_approx": is_approx_compare,
+            "has_gap_warning": has_gap_warning,
+            "approx_note": f"Нормализовано: сравнение периодов разной длины ({latest_days} дней vs {previous_days} дней)"
+            if is_approx_compare
+            else None,
+        },
         "kpi_sales_compare_label": "к предыдущему отчёту",
         "latest_period_label": latest_meta["period_label"],
         "previous_period_label": previous_meta["period_label"] if previous_meta else None,

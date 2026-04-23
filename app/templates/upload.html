@@ -118,6 +118,14 @@
                 <span class="hidden sm:inline">Ошибка</span>
             {% endif %}
         </span>
+
+        <button type="button"
+                onclick='deleteReport({{ f.id }}, {{ f.filename|tojson }})'
+                class="ml-1 text-xs font-semibold px-2.5 py-1.5 rounded border border-red-200
+                       text-red-500 hover:bg-red-50 transition-colors flex-shrink-0"
+                title="Удалить отчёт">
+            Удалить
+        </button>
     </div>
     {% else %}
     <div class="bg-white border border-slate-200 rounded-xl px-4 py-6 text-center text-sm text-slate-400">
@@ -189,6 +197,26 @@ function handleFile(file) {
 function setProgress(pct) {
     document.getElementById('progressBar').style.width = pct + '%';
     document.getElementById('progressPct').textContent = pct + '%';
+}
+
+function deleteReport(reportId, filename) {
+    if (!reportId) return;
+    const ok = confirm('Удалить отчёт "' + (filename || '') + '"? Данные этого отчёта будут удалены.');
+    if (!ok) return;
+
+    fetch('/upload/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ report_id: reportId })
+    })
+    .then(function (res) {
+        if (!res.ok) throw new Error('Delete failed');
+        showToast('Отчёт удалён', 'success');
+        setTimeout(function () { location.reload(); }, 500);
+    })
+    .catch(function () {
+        showToast('Не удалось удалить отчёт', 'error');
+    });
 }
 </script>
 {% endblock %}

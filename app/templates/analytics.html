@@ -12,6 +12,10 @@
         <span class="text-blue-500 font-semibold">{{ report_date }}</span>
         {% if prev_report_date %}
         · Сравнение с <span class="text-slate-400">{{ prev_report_date }}</span>
+        {% if has_compare_gap_warning and compare_gap_days %}
+        <span class="text-amber-600 font-semibold"
+              title="Промежуточные отчёты не загружены">⚠ Разрыв {{ compare_gap_days }} дня</span>
+        {% endif %}
         {% endif %}
     </p>
     {% else %}
@@ -34,7 +38,7 @@
         <p class="text-xs text-slate-400 font-medium mb-1">Всего позиций</p>
         <p class="text-2xl font-bold text-slate-800"><span id="kpiTotalValue">{{ kpi.total_sku }}</span></p>
         <p class="text-xs text-slate-400 mt-0.5">
-            из {{ kpi.total_all_sku }} в отчёте
+            {{ kpi.total_all_sku }} в текущем отчёте · {{ kpi.total_known_sku }} всего в базе
         </p>
     </button>
     <button id="kpiInStock"
@@ -205,6 +209,9 @@
                 <td class="px-3 py-3">
                     <p class="font-medium text-slate-800 truncate" title="{{ r.name }}">{{ r.name }}</p>
                     <div class="flex flex-wrap gap-1 mt-1">
+                        {% if r.no_latest_data %}
+                        <span class="text-xs font-semibold px-1.5 py-0.5 rounded bg-slate-200 text-slate-600">нет данных в последнем отчёте</span>
+                        {% endif %}
                         {% if r.is_seasonal %}
                         <span class="text-xs font-semibold px-1.5 py-0.5 rounded bg-violet-100 text-violet-600">✦ Сезонный</span>
                         {% endif %}
@@ -380,15 +387,23 @@ function navigateWithParams() {
     window.location.href = window.location.pathname + window.location.search;
 }
 
-var searchTimer = null;
-document.getElementById('searchInput').addEventListener('input', function (e) {
-    var value = (e.target && e.target.value) ? e.target.value : '';
-    if (searchTimer) clearTimeout(searchTimer);
-    searchTimer = setTimeout(function () {
-        setUrlParam('q', value.trim());
-        setUrlParam('page', '1');
-        navigateWithParams();
-    }, 250);
+function applySearchFilter() {
+    var input = document.getElementById('searchInput');
+    var value = (input && input.value) ? input.value : '';
+    setUrlParam('q', value.trim());
+    setUrlParam('page', '1');
+    navigateWithParams();
+}
+
+document.getElementById('searchInput').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        applySearchFilter();
+    }
+});
+
+document.getElementById('searchInput').addEventListener('blur', function () {
+    applySearchFilter();
 });
 
 document.getElementById('filterG1').addEventListener('change', function (e) {

@@ -82,7 +82,11 @@
                         <p class="text-sm text-slate-500">Продажи / нед (нормализовано)</p>
                         <p class="text-2xl font-bold text-slate-800">{{ detail.sales_qty | int }} шт</p>
                         <p class="text-sm mt-1 {% if detail.sales_change_pct >= 0 %}text-emerald-600{% else %}text-rose-500{% endif %}">
-                            {% if detail.sales_change_pct >= 0 %}+{% endif %}{{ detail.sales_change_pct | int }}% к предыдущему отчёту (нед. экв.)
+                            {% if detail.sales_change_gap_warning %}
+                                ⚠ Разрыв в данных
+                            {% else %}
+                                {% if detail.sales_change_is_approx %}~ {% endif %}{% if detail.sales_change_pct >= 0 %}+{% endif %}{{ detail.sales_change_pct | int }}% к предыдущему отчёту (нед. экв.)
+                            {% endif %}
                         </p>
                     </div>
                     <span class="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-50 text-emerald-500">
@@ -136,7 +140,15 @@
             <div class="flex items-start justify-between gap-3 mb-2">
                 <div>
                     <h2 class="text-sm font-semibold text-slate-700">Тренд продаж</h2>
-                    <p class="text-xs text-slate-500 mt-0.5">Изменение: {{ detail.trend.pct_change }}%</p>
+                    {% if detail.trend.has_gap_warning %}
+                    <p class="text-xs text-amber-600 mt-0.5">⚠ Разрыв в данных</p>
+                    {% else %}
+                    <p class="text-xs text-slate-500 mt-0.5"
+                       {% if detail.trend.comparison_note %}title="{{ detail.trend.comparison_note }}"{% endif %}>
+                        Изменение:
+                        {% if detail.trend.is_approx %}~ {% endif %}{{ detail.trend.pct_change }}%
+                    </p>
+                    {% endif %}
                 </div>
                 {% if detail.trend.trend == 'up' %}
                     <span class="text-xs font-semibold px-2 py-1 rounded bg-green-50 text-green-700">Рост</span>
@@ -145,6 +157,14 @@
                 {% else %}
                     <span class="text-xs font-semibold px-2 py-1 rounded bg-slate-50 text-slate-700">Стабильно</span>
                 {% endif %}
+            </div>
+            <div class="flex items-center justify-between gap-2 mb-2">
+                <p id="trendTitle" class="text-xs text-slate-500">Продажи: последние 12 недель</p>
+                <button id="trendBackBtn"
+                        type="button"
+                        class="hidden text-xs text-blue-500 hover:underline">
+                    ← Назад
+                </button>
             </div>
             <div class="relative h-64">
                 <canvas id="chartTrend"></canvas>
@@ -179,27 +199,111 @@
 <script>
 (function () {
     var trend = JSON.parse(document.getElementById('trend-data').textContent || '{}');
-    var trendSeries = trend.series || [];
-    var trendLabels = trendSeries.map(function (_, i) { return 'Неделя (экв.) ' + (i + 1); });
-    var trendValues = trendSeries.map(function (v) { return Number(v) || 0; });
+    var weeklyPoints = Array.isArray(trend.weekly_points) ? trend.weekly_points : [];
+    var weeksByMonth = trend.weeks_by_month || {};
+    var selectedMonth = null;
+    var trendChart = null;
 
-    var ctxT = document.getElementById('chartTrend');
-    if (ctxT && trendValues.length) {
-        new Chart(ctxT, {
+    function parseDate(value) {
+        var d = new Date(value);
+        return isNaN(d.getTime()) ? null : d;
+    }
+
+    function monthNameRu(monthIndex) {
+        var names = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+        return names[monthIndex] || '';
+    }
+
+    function getLatestMonthKey(monthIndex) {
+        var keys = Object.keys(weeksByMonth).filter(function (k) {
+            var parts = k.split('-');
+            if (parts.length !== 2) return false;
+            return (Number(parts[1]) - 1) === monthIndex;
+        }).sort();
+        return keys.length ? keys[keys.length - 1] : null;
+    }
+
+    function getTrendPointsForState() {
+        if (selectedMonth === null) return weeklyPoints;
+        var key = getLatestMonthKey(selectedMonth);
+        if (!key) return [];
+        return Array.isArray(weeksByMonth[key]) ? weeksByMonth[key] : [];
+    }
+
+    function setTrendTitle(points) {
+        var titleEl = document.getElementById('trendTitle');
+        var backBtn = document.getElementById('trendBackBtn');
+        if (!titleEl || !backBtn) return;
+        if (selectedMonth === null) {
+            titleEl.textContent = 'Продажи: последние 12 недель';
+            backBtn.classList.add('hidden');
+            return;
+        }
+        var key = getLatestMonthKey(selectedMonth);
+        if (!key || !points.length) {
+            titleEl.textContent = 'Нет данных за этот период';
+            backBtn.classList.remove('hidden');
+            return;
+        }
+        var year = Number(key.split('-')[0]);
+        titleEl.textContent = 'Продажи: ' + monthNameRu(selectedMonth) + ' ' + year;
+        backBtn.classList.remove('hidden');
+    }
+
+    function renderTrendChart() {
+        var ctxT = document.getElementById('chartTrend');
+        if (!ctxT) return;
+        var container = ctxT.parentElement;
+        if (container) container.classList.add('opacity-0', 'transition-opacity', 'duration-150');
+
+        var points = getTrendPointsForState();
+        setTrendTitle(points);
+
+        if (trendChart) trendChart.destroy();
+        if (!points.length) {
+            if (container) setTimeout(function () { container.classList.remove('opacity-0'); }, 20);
+            return;
+        }
+
+        var labels = points.map(function (p) { return p.label || ''; });
+        var values = points.map(function (p) { return Number(p.sales_qty) || 0; });
+
+        trendChart = new Chart(ctxT, {
             type: 'line',
             data: {
-                labels: trendLabels,
+                labels: labels,
                 datasets: [{
-                    label: 'Продажи, шт',
-                    data: trendValues,
+                    label: 'Продажи, шт (нед. экв.)',
+                    data: values,
                     borderColor: '#3b82f6',
                     backgroundColor: 'rgba(59,130,246,0.07)',
                     fill: true,
                     tension: 0.35,
                     pointRadius: 4,
-                    pointBackgroundColor: '#3b82f6',
+                    pointBackgroundColor: function (ctx) {
+                        var p = points[ctx.dataIndex] || {};
+                        return p.estimated ? '#94a3b8' : '#3b82f6';
+                    },
                     pointBorderColor: '#fff',
-                    pointBorderWidth: 2
+                    pointBorderWidth: 2,
+                    segment: {
+                        borderDash: function (ctx) {
+                            var p0 = points[ctx.p0DataIndex];
+                            var p1 = points[ctx.p1DataIndex];
+                            if (!p0 || !p1) return undefined;
+                            var d0 = parseDate(p0.mid_date);
+                            var d1 = parseDate(p1.mid_date);
+                            var gapDays = (d0 && d1) ? Math.abs((d1 - d0) / 86400000) : 0;
+                            if (gapDays > 14 || p0.estimated || p1.estimated) return [6, 6];
+                            return undefined;
+                        },
+                        borderColor: function (ctx) {
+                            var p0 = points[ctx.p0DataIndex];
+                            var p1 = points[ctx.p1DataIndex];
+                            if ((p0 && p0.estimated) || (p1 && p1.estimated)) return '#94a3b8';
+                            return '#3b82f6';
+                        }
+                    }
                 }]
             },
             options: {
@@ -209,8 +313,30 @@
                     y: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { font: { size: 11 } } },
                     x: { grid: { display: false }, ticks: { font: { size: 11 } } }
                 },
-                plugins: { legend: { display: false } }
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            afterBody: function (items) {
+                                if (!items || !items.length) return [];
+                                var idx = items[0].dataIndex;
+                                var p = points[idx] || {};
+                                if (p.estimated) return ['Расчётная оценка на основе месячного отчёта'];
+                                return [];
+                            }
+                        }
+                    }
+                }
             }
+        });
+        if (container) setTimeout(function () { container.classList.remove('opacity-0'); }, 20);
+    }
+
+    var backBtn = document.getElementById('trendBackBtn');
+    if (backBtn) {
+        backBtn.addEventListener('click', function () {
+            selectedMonth = null;
+            renderTrendChart();
         });
     }
 
@@ -243,6 +369,18 @@
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+                onHover: function (evt, elements) {
+                    if (!evt || !evt.native || !evt.native.target) return;
+                    evt.native.target.style.cursor = (elements && elements.length) ? 'pointer' : 'default';
+                },
+                onClick: function (_evt, elements) {
+                    if (!elements || !elements.length) return;
+                    var idx = elements[0].index;
+                    var monthNum = monthKeys[idx];
+                    if (!monthNum) return;
+                    selectedMonth = monthNum - 1;
+                    renderTrendChart();
+                },
                 scales: {
                     y: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { font: { size: 11 } } },
                     x: { grid: { display: false }, ticks: { font: { size: 11 } } }
@@ -251,6 +389,7 @@
             }
         });
     }
+    renderTrendChart();
 
     var turnoverWrap = JSON.parse(document.getElementById('turnover-data').textContent || '{}');
     var latest = turnoverWrap.latest || {};

@@ -1,8 +1,9 @@
 # app/routers/upload.py
 from fastapi import APIRouter, UploadFile, File, Depends, Request, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import select
+from sqlalchemy import select, delete
+from pydantic import BaseModel
 
 from app.core.database import get_db
 from app.core.templates import templates
@@ -14,6 +15,10 @@ from sqlalchemy import func
 router = APIRouter()
 
 ALLOWED_EXTENSIONS = (".xlsx", ".xls")
+
+
+class DeleteUploadPayload(BaseModel):
+    report_id: int
 
 
 def _build_upload_history(db: Session) -> list[dict]:
@@ -38,6 +43,7 @@ def _build_upload_history(db: Session) -> list[dict]:
         date_from_filename = meta["report_date"]
         sort_date = date_from_filename or report.report_date
         history.append({
+            "id":           report.id,
             "filename":     report.filename,
             "uploaded_at":  report.upload_date.strftime("%d.%m.%Y %H:%M"),
             "report_date":  sort_date.strftime("%d.%m.%Y") if sort_date else "—",
@@ -85,3 +91,17 @@ async def upload_file(
     ingest_weekly_report(filename=file.filename, file_bytes=contents, db=db)
 
     return {"status": "ok", "filename": file.filename}
+
+
+@router.post("/delete")
+def delete_upload(payload: DeleteUploadPayload, db: Session = Depends(get_db)):
+    report = db.execute(
+        select(WeeklyReport).where(WeeklyReport.id == payload.report_id)
+    ).scalar_one_or_none()
+    if not report:
+        raise HTTPException(status_code=404, detail="Отчёт не найден")
+
+    db.execute(delete(WeeklyReportItem).where(WeeklyReportItem.report_id == report.id))
+    db.delete(report)
+    db.commit()
+    return JSONResponse({"status": "ok"})

@@ -82,6 +82,17 @@ def analytics_page(
 
     page_start = max(1, page - 2)
     page_end = min(total_pages, page + 2)
+    compare_gap_days = None
+    has_compare_gap_warning = False
+    if data.get("report_date") and data.get("prev_report_date"):
+        try:
+            latest_date = date.fromisoformat(str(data["report_date"]))
+            prev_date = date.fromisoformat(str(data["prev_report_date"]))
+            compare_gap_days = abs((latest_date - prev_date).days)
+            has_compare_gap_warning = compare_gap_days > 45
+        except ValueError:
+            compare_gap_days = None
+            has_compare_gap_warning = False
     return templates.TemplateResponse(
         "analytics.html",
         {
@@ -110,6 +121,8 @@ def analytics_page(
             "page_end":         page_end,
             "limit":            limit,
             "offset":           safe_offset,
+            "compare_gap_days": compare_gap_days,
+            "has_compare_gap_warning": has_compare_gap_warning,
         },
     )
 
