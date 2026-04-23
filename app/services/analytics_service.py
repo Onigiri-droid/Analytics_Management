@@ -153,7 +153,10 @@ def get_trend(db: Session, *, article: str, weeks: int = 4) -> dict[str, Any]:
     history = _load_history_for_articles(db, articles=[normalized_article]).get(
         normalized_article, []
     )
-    points = history[: max(2, int(weeks))]
+    # История загружается в порядке "сначала новые", для графика и расчета тренда
+    # приводим к естественной хронологии: слева старые -> справа новые.
+    points_desc = history[: max(2, int(weeks))]
+    points = list(reversed(points_desc))
     sales = [p.sales_qty for p in points]
 
     if len(sales) < 2:
@@ -165,8 +168,8 @@ def get_trend(db: Session, *, article: str, weeks: int = 4) -> dict[str, Any]:
         }
 
     mid = len(sales) // 2
-    prev = sales[mid:]
-    last = sales[:mid]
+    prev = sales[:mid]
+    last = sales[mid:]
     prev_avg = sum(prev) / len(prev) if prev else 0.0
     last_avg = sum(last) / len(last) if last else 0.0
     pct = (
@@ -318,6 +321,82 @@ def build_analytics_table(
             WeeklyReportItem.stock_qty < (WeeklyReportItem.sales_qty * 2.0),
         )
 
+    def _is_preseason_window(*, current_month: int, peak_month: int) -> bool:
+        months_before_peak = (peak_month - current_month) % 12
+        return months_before_peak in (1, 2)
+
+    def _is_sharp_seasonal_peak(month_sales: dict[int, float], peak_month: int) -> bool:
+        peak_val = month_sales.get(peak_month, 0.0)
+        non_peak_vals = [v for m, v in month_sales.items() if m != peak_month and v > 0]
+        if peak_val <= 0 or len(non_peak_vals) < 2:
+            return False
+
+        baseline = sum(non_peak_vals) / len(non_peak_vals)
+        # Должен быть выраженный всплеск, а не просто случайный максимум.
+        if baseline <= 0:
+            return False
+        return peak_val >= baseline * 2.0
+
+    # ── Сезонность KPI должна быть общей, не "по странице" ───────────────
+    # Считаем по всем артикулам, попавшим под поисковые/групповые фильтры.
+    seasonal_count_total = 0
+    seasonal_articles_set: set[str] = set()
+    try:
+        seasonal_articles = [
+            _normalize_article(a)
+            for (a,) in db.execute(
+                select(WeeklyReportItem.article)
+                .where(WeeklyReportItem.report_id == latest.id)
+                .where(
+                    WeeklyReportItem.group1 == g1 if g1 else True,
+                    WeeklyReportItem.group2 == g2 if g2 else True,
+                    WeeklyReportItem.group3 == g3 if g3 else True,
+                )
+                .where(
+                    or_(
+                        WeeklyReportItem.article.ilike(f"%{q_norm}%"),
+                        WeeklyReportItem.name.ilike(f"%{q_norm}%"),
+                        WeeklyReportItem.group1.ilike(f"%{q_norm}%"),
+                        WeeklyReportItem.group2.ilike(f"%{q_norm}%"),
+                        WeeklyReportItem.group3.ilike(f"%{q_norm}%"),
+                        WeeklyReportItem.price_category.ilike(f"%{q_norm}%"),
+                    )
+                    if q_norm
+                    else True
+                )
+            ).all()
+        ]
+        seasonal_articles = [a for a in set(seasonal_articles) if a]
+        if seasonal_articles:
+            hist_all = _load_history_for_articles(db, articles=seasonal_articles)
+            current_month = latest.report_date.month
+            for art in seasonal_articles:
+                hist = hist_all.get(art, [])
+                month_sales: dict[int, float] = defaultdict(float)
+                for p in hist:
+                    month_sales[p.report_date.month] += p.sales_qty
+                peak_month = (
+                    max(month_sales.items(), key=lambda x: x[1])[0] if month_sales else None
+                )
+                if peak_month is None or len(month_sales) < 4:
+                    continue
+                if _is_sharp_seasonal_peak(month_sales, peak_month) and _is_preseason_window(
+                    current_month=current_month, peak_month=peak_month
+                ):
+                    seasonal_articles_set.add(art)
+            seasonal_count_total = len(seasonal_articles_set)
+    except Exception:
+        # KPI сезонности не должен ломать страницу
+        seasonal_count_total = 0
+        seasonal_articles_set = set()
+
+    # seasonal-фильтр должен применяться до пагинации, иначе страницы "пустеют".
+    if kpi_norm == "seasonal":
+        if seasonal_articles_set:
+            base_query = base_query.where(WeeklyReportItem.article.in_(seasonal_articles_set))
+        else:
+            base_query = base_query.where(False)
+
     items_query = base_query.order_by(WeeklyReportItem.article.asc()).limit(limit).offset(offset)
     items = db.execute(items_query).all()
     # ── Продажи из предыдущего отчёта для сравнения ─────────────────────
@@ -403,7 +482,8 @@ def build_analytics_table(
     articles = [_normalize_article(a) for a, *_ in items_for_view if _normalize_article(a)]
     history_map = _load_history_for_articles(db, articles=articles)
 
-    # ── Уникальные группы для фильтров (из ВСЕГО отчёта, не только limit) ─
+    # ── Уникальные группы для фильтров (каскадная логика) ─────────────────
+    # group2 зависит от выбранной group1; group3 зависит от group1/group2.
     all_groups = db.execute(
         select(
             WeeklyReportItem.group1,
@@ -414,9 +494,19 @@ def build_analytics_table(
         .distinct()
     ).all()
 
-    groups1: list[str] = sorted({g1 for g1, _, _ in all_groups if g1})
-    groups2: list[str] = sorted({g2 for _, g2, _ in all_groups if g2})
-    groups3: list[str] = sorted({g3 for _, _, g3 in all_groups if g3})
+    groups1: list[str] = sorted({v1 for v1, _, _ in all_groups if v1})
+
+    groups2_source = all_groups
+    if g1:
+        groups2_source = [row for row in groups2_source if (row[0] or "") == g1]
+    groups2: list[str] = sorted({v2 for _, v2, _ in groups2_source if v2})
+
+    groups3_source = all_groups
+    if g1:
+        groups3_source = [row for row in groups3_source if (row[0] or "") == g1]
+    if g2:
+        groups3_source = [row for row in groups3_source if (row[1] or "") == g2]
+    groups3: list[str] = sorted({v3 for _, _, v3 in groups3_source if v3})
 
     # ── KPI (с учётом server-side фильтров групп/поиска) ─────────────────
     total_all_sku = db.execute(
@@ -472,78 +562,6 @@ def build_analytics_table(
         )
     ).scalar_one()
 
-    def _is_preseason_window(*, current_month: int, peak_month: int) -> bool:
-        months_before_peak = (peak_month - current_month) % 12
-        return months_before_peak in (1, 2)
-
-    def _is_sharp_seasonal_peak(month_sales: dict[int, float], peak_month: int) -> bool:
-        peak_val = month_sales.get(peak_month, 0.0)
-        non_peak_vals = [v for m, v in month_sales.items() if m != peak_month and v > 0]
-        if peak_val <= 0 or len(non_peak_vals) < 2:
-            return False
-
-        baseline = sum(non_peak_vals) / len(non_peak_vals)
-        # Должен быть выраженный всплеск, а не просто случайный максимум.
-        if baseline <= 0:
-            return False
-        return peak_val >= baseline * 2.0
-
-    # ── Сезонность KPI должна быть общей, не "по странице" ───────────────
-    # Считаем по всем артикулам, попавшим под поисковые/групповые фильтры.
-    seasonal_count_total = 0
-    try:
-        seasonal_articles = [
-            _normalize_article(a)
-            for (a,) in db.execute(
-                select(WeeklyReportItem.article)
-                .where(WeeklyReportItem.report_id == latest.id)
-                .where(
-                    WeeklyReportItem.group1 == g1 if g1 else True,
-                    WeeklyReportItem.group2 == g2 if g2 else True,
-                    WeeklyReportItem.group3 == g3 if g3 else True,
-                )
-            ).all()
-        ]
-        if q_norm:
-            like = f"%{q_norm}%"
-            seasonal_articles = [
-                _normalize_article(a)
-                for (a,) in db.execute(
-                    select(WeeklyReportItem.article)
-                    .where(WeeklyReportItem.report_id == latest.id)
-                    .where(
-                        or_(
-                            WeeklyReportItem.article.ilike(like),
-                            WeeklyReportItem.name.ilike(like),
-                            WeeklyReportItem.group1.ilike(like),
-                            WeeklyReportItem.group2.ilike(like),
-                            WeeklyReportItem.group3.ilike(like),
-                            WeeklyReportItem.price_category.ilike(like),
-                        )
-                    )
-                ).all()
-            ]
-        seasonal_articles = [a for a in set(seasonal_articles) if a]
-        if seasonal_articles:
-            hist_all = _load_history_for_articles(db, articles=seasonal_articles)
-            current_month = latest.report_date.month
-            for art in seasonal_articles:
-                hist = hist_all.get(art, [])
-                month_sales: dict[int, float] = defaultdict(float)
-                for p in hist:
-                    month_sales[p.report_date.month] += p.sales_qty
-                peak_month = (
-                    max(month_sales.items(), key=lambda x: x[1])[0] if month_sales else None
-                )
-                if peak_month is None or len(month_sales) < 4:
-                    continue
-                if _is_sharp_seasonal_peak(month_sales, peak_month) and _is_preseason_window(
-                    current_month=current_month, peak_month=peak_month
-                ):
-                    seasonal_count_total += 1
-    except Exception:
-        # KPI сезонности не должен ломать страницу
-        seasonal_count_total = 0
 
     # ── Строки таблицы ───────────────────────────────────────────────────
     rows: list[dict[str, Any]] = []
@@ -634,10 +652,6 @@ def build_analytics_table(
                 "trend_pct": round(float(pct), 2),
             }
         )
-
-    # ── KPI-фильтр seasonal применяем на уровне page-rows ─────────────────
-    if kpi_norm == "seasonal":
-        rows = [r for r in rows if r.get("is_seasonal")]
 
     return {
         "report_date": str(latest.report_date),

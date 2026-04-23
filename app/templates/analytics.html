@@ -86,7 +86,7 @@
     <select id="filterG1"
             class="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-slate-50
                    focus:outline-none focus:ring-2 focus:ring-blue-400 sm:w-44">
-        <option value="">Все группы</option>
+        <option value="">Все группы 1</option>
         {% for g in groups1 %}<option value="{{ g }}" {% if g == filter_g1 %}selected{% endif %}>{{ g }}</option>{% endfor %}
     </select>
     <select id="filterG2"
@@ -393,11 +393,16 @@ document.getElementById('searchInput').addEventListener('input', function (e) {
 
 document.getElementById('filterG1').addEventListener('change', function (e) {
     setUrlParam('g1', (e.target && e.target.value) ? e.target.value : '');
+    // Каскадно сбрасываем зависимые уровни фильтров.
+    setUrlParam('g2', '');
+    setUrlParam('g3', '');
     setUrlParam('page', '1');
     navigateWithParams();
 });
 document.getElementById('filterG2').addEventListener('change', function (e) {
     setUrlParam('g2', (e.target && e.target.value) ? e.target.value : '');
+    // group3 зависит от group2, поэтому очищаем при смене.
+    setUrlParam('g3', '');
     setUrlParam('page', '1');
     navigateWithParams();
 });
