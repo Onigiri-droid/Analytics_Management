@@ -2,6 +2,8 @@
 .venv
 venv
 __pycache__
+.pycache
+.pycache_tmp
 *.pyc
 *.pyo
 .pytest_cache
@@ -12,3 +14,4 @@ dist
 build
 *.xlsx
 *.xls
+.DS_Store
