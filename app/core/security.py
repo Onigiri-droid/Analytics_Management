@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 PBKDF2_ITERATIONS = 240_000
 RESET_TOKEN_TTL_MINUTES = 30
+ACTIVATION_TOKEN_TTL_HOURS = 72
 
 
 def generate_salt() -> str:
@@ -41,3 +42,7 @@ def now_utc() -> datetime:
 
 def reset_token_expiry() -> datetime:
     return now_utc() + timedelta(minutes=RESET_TOKEN_TTL_MINUTES)
+
+
+def activation_token_expiry() -> datetime:
+    return now_utc() + timedelta(hours=ACTIVATION_TOKEN_TTL_HOURS)

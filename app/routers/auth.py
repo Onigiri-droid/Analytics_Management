@@ -9,14 +9,18 @@ from app.core.database import get_db
 from app.core.templates import templates
 from app.models.user import User
 from app.services.auth_service import (
+    activate_user_by_token,
     authenticate_user,
+    is_user_pending_activation,
     consume_valid_reset_token,
     create_user,
     get_user_by_email,
     issue_password_reset_token,
+    issue_account_activation_token,
     login_limiter,
     normalize_email,
     reset_limiter,
+    send_admin_activation_email,
     send_password_reset_email,
     update_user_password,
     validate_password_strength,
@@ -93,13 +97,18 @@ def login(
 
     user = authenticate_user(db=db, email=email, password=password)
     if user is None:
+        pending_activation = is_user_pending_activation(db=db, email=email)
         return templates.TemplateResponse(
             "auth.html",
             {
                 "request": request,
                 "csrf_token": _get_or_create_csrf_token(request),
                 "message": None,
-                "error": "Неверные email или пароль.",
+                "error": (
+                    "Аккаунт ещё не активирован администратором."
+                    if pending_activation
+                    else "Неверные email или пароль."
+                ),
                 "active_tab": "login",
             },
             status_code=400,
@@ -156,11 +165,23 @@ def register(
             status_code=400,
         )
 
-    user = create_user(db=db, email=email, full_name=full_name, password=password)
-    request.session.clear()
-    request.session["user_id"] = user.id
-    request.session["csrf_token"] = secrets.token_urlsafe(24)
-    return RedirectResponse(url="/dashboard/", status_code=303)
+    user = create_user(db=db, email=email, full_name=full_name, password=password, is_active=False)
+    activation_token = issue_account_activation_token(db=db, user=user)
+    activation_link = f"{settings.app_base_url.rstrip('/')}/auth/activate?token={activation_token}"
+    send_admin_activation_email(user=user, activation_link=activation_link)
+    return templates.TemplateResponse(
+        "auth.html",
+        {
+            "request": request,
+            "csrf_token": _get_or_create_csrf_token(request),
+            "message": (
+                "Аккаунт создан и ожидает активации администратором. "
+                "Вы сможете войти после подтверждения."
+            ),
+            "error": None,
+            "active_tab": "login",
+        },
+    )
 
 
 @router.post("/forgot")
@@ -331,3 +352,30 @@ def logout(request: Request):
 def logout_get(request: Request):
     request.session.clear()
     return RedirectResponse(url="/auth/", status_code=303)
+
+
+@router.get("/activate", response_class=HTMLResponse)
+def activate_account(request: Request, token: str, db: Session = Depends(get_db)):
+    user = activate_user_by_token(db=db, raw_token=token)
+    if user is None:
+        return templates.TemplateResponse(
+            "auth.html",
+            {
+                "request": request,
+                "csrf_token": _get_or_create_csrf_token(request),
+                "message": None,
+                "error": "Ссылка активации недействительна или устарела.",
+                "active_tab": "login",
+            },
+            status_code=400,
+        )
+    return templates.TemplateResponse(
+        "auth.html",
+        {
+            "request": request,
+            "csrf_token": _get_or_create_csrf_token(request),
+            "message": f"Аккаунт {user.email} активирован. Теперь можно войти.",
+            "error": None,
+            "active_tab": "login",
+        },
+    )

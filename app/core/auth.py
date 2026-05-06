@@ -15,7 +15,7 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
         raise LoginRequired()
 
     user = db.get(User, user_id)
-    if user is None:
+    if user is None or not user.is_active:
         request.session.clear()
         raise LoginRequired()
     return user

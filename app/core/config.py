@@ -35,6 +35,7 @@ class Settings:
     smtp_use_tls: bool
     smtp_use_ssl: bool
     app_base_url: str
+    account_activation_admin_email: str | None
 
     def __init__(self):
         self.database_url = os.getenv(
@@ -56,6 +57,7 @@ class Settings:
         # Порт 465: implicit TLS (SMTP_SSL), не STARTTLS
         self.smtp_use_ssl = os.getenv("SMTP_USE_SSL", "0") == "1"
         self.app_base_url = os.getenv("APP_BASE_URL", "http://localhost:8000")
+        self.account_activation_admin_email = _env_trim(os.getenv("ACCOUNT_ACTIVATION_ADMIN_EMAIL"))
 
 
 settings = get_settings()
